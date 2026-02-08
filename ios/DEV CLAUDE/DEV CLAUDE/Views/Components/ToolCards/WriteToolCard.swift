@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Specialized tool card for Write (file creation) operations.
+/// Specialized tool card for Write (file creation) operations with syntax highlighting.
 struct WriteToolCard: View {
     let toolCall: ToolCallPart
     @State private var isExpanded = false
@@ -15,6 +15,10 @@ struct WriteToolCard: View {
 
     private var content: String {
         toolCall.args["content"] as? String ?? toolCall.args["contents"] as? String ?? ""
+    }
+
+    private var language: String {
+        detectLanguage(from: filePath)
     }
 
     var body: some View {
@@ -40,12 +44,7 @@ struct WriteToolCard: View {
 
             if !content.isEmpty {
                 DisclosureGroup(isExpanded: $isExpanded) {
-                    let truncated = content.count > 2000 ? String(content.prefix(2000)) + "\n..." : content
-                    Text(truncated)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    CodePreviewView(code: content, language: language, maxLines: 30)
                 } label: {
                     let lineCount = content.components(separatedBy: "\n").count
                     Text("\(lineCount) lines")

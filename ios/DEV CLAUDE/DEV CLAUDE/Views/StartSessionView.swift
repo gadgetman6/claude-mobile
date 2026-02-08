@@ -5,6 +5,7 @@ struct StartSessionView: View {
     let server: Server
     @Environment(ServerManager.self) private var serverManager
     @Environment(SessionStore.self) private var sessionStore
+    @Environment(NotificationManager.self) private var notificationManager
 
     @State private var cwd: String = ""
     @State private var provider: Provider = .claude
@@ -19,22 +20,24 @@ struct StartSessionView: View {
         case codex = "Codex"
     }
 
+    @FocusState private var cwdFocused: Bool
+
     var body: some View {
-        if inSession {
-            ChatSessionView(server: server, cwd: cwd)
-        } else {
-            sessionForm
-                .navigationTitle(server.alias)
-                .onAppear {
-                    serverManager.selectServer(server)
-                    loadCwd()
-                    // Connect socket when this screen appears
-                    if sessionStore.connectionState == .disconnected {
-                        sessionStore.connect(to: server)
-                    }
-                    Task { await loadRecentSessions() }
+        sessionForm
+            .scrollDismissesKeyboard(.interactively)
+            .navigationTitle(server.alias)
+            .navigationDestination(isPresented: $inSession) {
+                ChatSessionView(server: server, cwd: cwd)
+            }
+            .onAppear {
+                serverManager.selectServer(server)
+                notificationManager.setServer(server.baseURL)
+                loadCwd()
+                if sessionStore.connectionState == .disconnected {
+                    sessionStore.connect(to: server)
                 }
-        }
+                Task { await loadRecentSessions() }
+            }
     }
 
     // MARK: - Form
@@ -50,6 +53,13 @@ struct StartSessionView: View {
             startButtonSection
             if !recentSessions.isEmpty {
                 recentSessionsSection
+            }
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { cwdFocused = false }
             }
         }
     }
@@ -86,8 +96,17 @@ struct StartSessionView: View {
             TextField("/path/to/project", text: $cwd)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
-                .onSubmit { saveCwd() }
+                .focused($cwdFocused)
+                .onSubmit {
+                    cwdFocused = false
+                    saveCwd()
+                    Task { await loadRecentSessions() }
+                }
                 .onChange(of: cwd) { _, _ in
+                    Task { await loadRecentSessions() }
+                }
+                .onChange(of: provider) { _, _ in
+                    recentSessions = []
                     Task { await loadRecentSessions() }
                 }
         }
@@ -150,9 +169,17 @@ struct StartSessionView: View {
     }
 
     private var recentSessionsSection: some View {
-        Section("Recent Sessions") {
+        Section {
             ForEach(recentSessions) { session in
                 recentSessionRow(session)
+            }
+        } header: {
+            HStack {
+                Text("Recent Sessions")
+                Spacer()
+                Text(provider == .claude ? "Claude" : "Codex")
+                    .font(.caption2)
+                    .foregroundStyle(provider == .claude ? .orange : .green)
             }
         }
     }
@@ -173,21 +200,50 @@ struct StartSessionView: View {
     }
 
     private func recentSessionMeta(_ session: RecentSession) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if session.isRunning == true {
                 HStack(spacing: 4) {
                     Circle().fill(.green).frame(width: 6, height: 6)
                     Text("running")
                 }
             }
+
+            if let model = session.model, !model.isEmpty {
+                Text(shortModelName(model))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.blue.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+
             Text(session.timestamp, style: .relative)
+
+            if let tokens = session.totalTokens, tokens > 0 {
+                Text(formatTokens(tokens))
+            }
+
             if let cost = session.costUsd, cost > 0 {
                 Text(String(format: "$%.2f", cost))
                     .foregroundStyle(.orange)
             }
         }
-        .font(.caption)
+        .font(.caption2)
         .foregroundStyle(.secondary)
+    }
+
+    private func shortModelName(_ model: String) -> String {
+        if model.contains("opus") { return "Opus" }
+        if model.contains("sonnet") { return "Sonnet" }
+        if model.contains("haiku") { return "Haiku" }
+        if model.contains("codex") { return "Codex" }
+        if model.contains("o4-mini") { return "O4 Mini" }
+        return String(model.prefix(12))
+    }
+
+    private func formatTokens(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM tok", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.0fk tok", Double(n) / 1_000) }
+        return "\(n) tok"
     }
 
     // MARK: - Actions

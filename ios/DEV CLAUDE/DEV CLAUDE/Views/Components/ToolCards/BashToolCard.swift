@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Specialized tool card for Bash/command execution.
+/// Specialized tool card for Bash/command execution with syntax-highlighted output.
 struct BashToolCard: View {
     let toolCall: ToolCallPart
     @State private var showOutput = false
@@ -50,31 +50,21 @@ struct BashToolCard: View {
                 Divider()
 
                 if outputLines > 8 {
-                    // Collapsible output
                     DisclosureGroup(isExpanded: $showOutput) {
-                        outputView
+                        CodePreviewView(code: output, language: "bash", maxLines: 50)
                     } label: {
                         Text("\(outputLines) lines")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    outputView
+                    CodePreviewView(code: output, language: "bash")
                 }
             }
         }
         .padding(10)
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var outputView: some View {
-        let truncated = output.count > 3000 ? String(output.prefix(3000)) + "\n..." : output
-        return Text(truncated)
-            .font(.system(.caption2, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

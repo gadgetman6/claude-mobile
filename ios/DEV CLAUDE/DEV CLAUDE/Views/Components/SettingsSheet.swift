@@ -37,21 +37,32 @@ struct SettingsSheet: View {
         }
     }
 
+    private static let fallbackModels: [ModelInfo] = [
+        ModelInfo(value: "claude-opus-4-6", displayName: "Claude Opus 4.6", description: "Most capable"),
+        ModelInfo(value: "claude-sonnet-4-5-20250929", displayName: "Claude Sonnet 4.5", description: "Fast and capable"),
+        ModelInfo(value: "claude-haiku-4-5-20251001", displayName: "Claude Haiku 4.5", description: "Fastest"),
+        ModelInfo(value: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", description: "Latest Codex model"),
+        ModelInfo(value: "o4-mini", displayName: "O4 Mini", description: "Fast reasoning model"),
+    ]
+
+    private var displayModels: [ModelInfo] {
+        sessionStore.models.isEmpty ? Self.fallbackModels : sessionStore.models
+    }
+
     private var modelSection: some View {
         Section("Model") {
-            if sessionStore.models.isEmpty {
-                Text(sessionStore.currentModel)
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Model", selection: Binding(
-                    get: { sessionStore.currentModel },
-                    set: { sessionStore.changeModel($0) }
-                )) {
-                    ForEach(sessionStore.models) { m in
-                        Text(m.displayName).tag(m.value)
-                    }
+            Picker("Model", selection: Binding(
+                get: { sessionStore.currentModel },
+                set: { sessionStore.changeModel($0) }
+            )) {
+                ForEach(displayModels) { m in
+                    Text(m.displayName).tag(m.value)
                 }
             }
+
+            Text(sessionStore.currentModel)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
 

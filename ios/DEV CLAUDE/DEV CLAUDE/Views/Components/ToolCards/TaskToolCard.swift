@@ -108,6 +108,8 @@ struct TaskToolCard: View {
                     .font(.caption2)
             }
             .foregroundStyle(.purple.opacity(0.7))
+        case .image:
+            EmptyView()
         case .toolCall(let tc):
             HStack(spacing: 4) {
                 Image(systemName: "wrench")

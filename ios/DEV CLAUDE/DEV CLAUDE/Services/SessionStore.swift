@@ -125,16 +125,24 @@ final class SessionStore {
     }
 
     func sendContentBlocks(_ blocks: [[String: Any]]) {
-        // For image + text messages
-        let textParts = blocks
-            .filter { ($0["type"] as? String) == "text" }
-            .compactMap { $0["text"] as? String }
-        let displayText = textParts.joined(separator: "\n")
-        if !displayText.isEmpty {
+        // Build display parts from content blocks
+        var displayParts: [ContentPart] = []
+        for block in blocks {
+            let type = block["type"] as? String
+            if type == "text", let text = block["text"] as? String, !text.isEmpty {
+                displayParts.append(.text(text))
+            } else if type == "image",
+                      let source = block["source"] as? [String: Any],
+                      let base64 = source["data"] as? String,
+                      let data = Data(base64Encoded: base64) {
+                displayParts.append(.image(data))
+            }
+        }
+        if !displayParts.isEmpty {
             messages.append(DisplayMessage(
                 id: UUID().uuidString,
                 role: .user,
-                content: [.text(displayText)]
+                content: displayParts
             ))
         }
         socketService.emitUserMessage(content: blocks)
@@ -601,7 +609,7 @@ struct DisplayMessage: Identifiable {
         case user, assistant, system
     }
 
-    enum MessageStatus {
+    enum MessageStatus: Equatable {
         case running, complete
     }
 }
@@ -610,6 +618,7 @@ enum ContentPart {
     case text(String)
     case reasoning(String)
     case toolCall(ToolCallPart)
+    case image(Data)  // JPEG data for display
 }
 
 struct ToolCallPart: Identifiable {

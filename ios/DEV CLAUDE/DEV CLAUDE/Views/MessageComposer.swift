@@ -29,16 +29,25 @@ struct MessageComposerView: View {
                     Task { await loadImage(from: newItem) }
                 }
 
-                // Text input
-                TextField("Send a message...", text: $text, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .focused($isFocused)
-                    .onSubmit { send() }
+                // Text input (TextEditor for proper multiline support)
+                ZStack(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Send a message...")
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 14)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $text)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 44, maxHeight: 160)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .focused($isFocused)
+                }
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 22))
 
                 // Send or Cancel button
                 if sessionStore.isStreaming {
@@ -73,25 +82,30 @@ struct MessageComposerView: View {
     }
 
     private var canSend: Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && sessionStore.connectionState == .connected
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasImage = attachedImageData != nil
+        return (hasText || hasImage) && sessionStore.connectionState == .connected
     }
 
     private func send() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let hasText = !trimmed.isEmpty
+        let hasImage = attachedImageData != nil
+
+        guard hasText || hasImage else { return }
 
         if let imageData = attachedImageData {
-            // Send text + image
+            // Send image with optional text
             let base64 = imageData.base64EncodedString()
-            let blocks: [[String: Any]] = [
-                ["type": "text", "text": trimmed],
-                ["type": "image", "source": [
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": base64,
-                ]],
-            ]
+            var blocks: [[String: Any]] = []
+            if hasText {
+                blocks.append(["type": "text", "text": trimmed])
+            }
+            blocks.append(["type": "image", "source": [
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": base64,
+            ]])
             sessionStore.sendContentBlocks(blocks)
             attachedImageData = nil
             selectedPhoto = nil

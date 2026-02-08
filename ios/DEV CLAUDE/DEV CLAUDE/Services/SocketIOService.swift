@@ -127,9 +127,18 @@ final class SocketIOService {
         socket?.emit("start_session", data)
     }
 
-    /// Send a user message (text or content blocks).
+    /// Send a user message (text string or content blocks array).
     func emitUserMessage(content: Any) {
-        socket?.emit("user_message", ["content": content])
+        if let text = content as? String {
+            socket?.emit("user_message", ["content": text])
+        } else if let blocks = content as? [[String: Any]],
+                  let jsonData = try? JSONSerialization.data(withJSONObject: blocks),
+                  let jsonString = String(data: jsonData, encoding: .utf8) {
+            // Send content blocks as a JSON string — server needs to parse it
+            socket?.emit("user_message", ["content": jsonString, "contentIsJSON": true])
+        } else {
+            socket?.emit("user_message", ["content": content])
+        }
     }
 
     /// Respond to a permission request.

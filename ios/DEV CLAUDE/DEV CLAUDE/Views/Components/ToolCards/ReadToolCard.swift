@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Specialized tool card for Read operations.
+/// Specialized tool card for Read operations with syntax highlighting.
 struct ReadToolCard: View {
     let toolCall: ToolCallPart
     @State private var isExpanded = false
@@ -11,6 +11,10 @@ struct ReadToolCard: View {
 
     private var fileName: String {
         URL(fileURLWithPath: filePath).lastPathComponent
+    }
+
+    private var language: String {
+        detectLanguage(from: filePath)
     }
 
     var body: some View {
@@ -36,12 +40,7 @@ struct ReadToolCard: View {
 
             if let result = toolCall.result, !result.isEmpty {
                 DisclosureGroup(isExpanded: $isExpanded) {
-                    let truncated = result.count > 2000 ? String(result.prefix(2000)) + "\n..." : result
-                    Text(truncated)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    CodePreviewView(code: result, language: language, maxLines: 30)
                 } label: {
                     let lineCount = result.components(separatedBy: "\n").count
                     Text("\(lineCount) lines")

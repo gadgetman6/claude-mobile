@@ -339,6 +339,7 @@ const httpServer = createServer();
 const io = new Server(httpServer, {
   cors: { origin: "*" },
   path: "/engine.io/",
+  maxHttpBufferSize: 10 * 1024 * 1024, // 10MB for image uploads
 });
 
 function sendToClient(msg: ServerMessage) {
@@ -679,7 +680,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("user_message", (data: { content: string | ContentBlock[] }) => {
+  socket.on("user_message", (data: { content: string | ContentBlock[]; contentIsJSON?: boolean }) => {
     if (!currentSession) {
       socket.emit("message", {
         type: "error",
@@ -687,7 +688,16 @@ io.on("connection", (socket) => {
       } satisfies ServerMessage);
       return;
     }
-    currentSession.sendUserMessage(data.content);
+    // iOS client sends content blocks as a JSON string to avoid Socket.IO serialization issues
+    let content = data.content;
+    if (data.contentIsJSON && typeof content === "string") {
+      try {
+        content = JSON.parse(content);
+      } catch {
+        console.error("[socket.io] Failed to parse contentIsJSON:", content?.toString().slice(0, 100));
+      }
+    }
+    currentSession.sendUserMessage(content);
   });
 
   socket.on("permission_response", (data: {

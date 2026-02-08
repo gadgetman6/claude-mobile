@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AA3617BC95D30A7A4C2DF414 /* libPods-DEV CLAUDE.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 356B3C2E9D6E272B5530CC1B /* libPods-DEV CLAUDE.a */; };
+		D1000001AAAA000100000001 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = D1000002AAAA000200000002 /* Textual */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA3617BC95D30A7A4C2DF414 /* libPods-DEV CLAUDE.a in Frameworks */,
+				D1000001AAAA000100000001 /* Textual in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +98,9 @@
 				C3B8BDEB2F38F94700BA05BD /* DEV CLAUDE */,
 			);
 			name = "DEV CLAUDE";
+			packageProductDependencies = (
+				D1000002AAAA000200000002 /* Textual */,
+			);
 			productName = "DEV CLAUDE";
 			productReference = C3B8BDE92F38F94700BA05BD /* DEV CLAUDE.app */;
 			productType = "com.apple.product-type.application";
@@ -124,6 +129,9 @@
 			);
 			mainGroup = C3B8BDE02F38F94700BA05BD;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D1000003AAAA000300000003 /* XCRemoteSwiftPackageReference "textual" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C3B8BDEA2F38F94700BA05BD /* Products */;
 			projectDirPath = "";
@@ -324,6 +332,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DEV CLAUDE/DEV_CLAUDE.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = X53TFTT984;
@@ -359,6 +368,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "DEV CLAUDE/DEV_CLAUDE.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = X53TFTT984;
@@ -410,6 +420,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D1000003AAAA000300000003 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D1000002AAAA000200000002 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1000003AAAA000300000003 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = C3B8BDE12F38F94700BA05BD /* Project object */;
 }

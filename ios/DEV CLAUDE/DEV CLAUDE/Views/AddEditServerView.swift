@@ -48,10 +48,12 @@ struct AddEditServerView: View {
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .submitLabel(.next)
                         .onChange(of: url) { _, _ in testResult = nil }
 
                     TextField("My Desktop", text: $alias)
                         .textContentType(.nickname)
+                        .submitLabel(.done)
                 } header: {
                     Text("Server Details")
                 } footer: {

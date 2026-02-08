@@ -1,34 +1,108 @@
 import SwiftUI
+import Textual
 
-/// Scrollable message thread with auto-scroll to bottom.
+/// Scrollable message thread with pagination and floating scroll-to-bottom button.
 struct MessageThreadView: View {
     @Environment(SessionStore.self) private var sessionStore
 
+    private let pageSize = 40
+
+    @State private var visibleCount = 40
+    @State private var isNearBottom = true
+
+    private var hasMore: Bool {
+        sessionStore.messages.count > visibleCount
+    }
+
     var body: some View {
+        GeometryReader { geo in
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if sessionStore.messages.isEmpty {
-                        welcomeView
-                    } else {
-                        ForEach(sessionStore.messages) { message in
-                            MessageCell(message: message)
-                                .id(message.id)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(spacing: 4) {
+                        if sessionStore.messages.isEmpty {
+                            welcomeView
+                        } else {
+                            if hasMore {
+                                loadMoreButton
+                            }
+
+                            ForEach(sessionStore.messages.suffix(visibleCount)) { message in
+                                MessageCell(message: message)
+                            }
                         }
+
+                        // Bottom anchor
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
+                            .onAppear { isNearBottom = true }
+                            .onDisappear { isNearBottom = false }
                     }
-                    // Anchor for scrolling
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom")
+                    .frame(width: geo.size.width)
+                    .clipped()
+                }
+            .onChange(of: sessionStore.messages.count) { oldCount, newCount in
+                guard newCount > 0 else { return }
+                let delta = newCount - oldCount
+
+                if delta > pageSize || oldCount == 0 {
+                    visibleCount = min(pageSize, newCount)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                } else if delta > 0 && isNearBottom {
+                    visibleCount = max(visibleCount, newCount)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                } else if delta < 0 {
+                    visibleCount = pageSize
                 }
             }
-            .onChange(of: sessionStore.messages.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+            .overlay(alignment: .bottom) {
+                scrollToBottomButton(proxy: proxy)
             }
         }
+        } // GeometryReader
+    }
+
+    // MARK: - Subviews
+
+    private var loadMoreButton: some View {
+        Button {
+            visibleCount = min(visibleCount + pageSize, sessionStore.messages.count)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.circle")
+                Text("Load earlier messages")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
+        Button {
+            isNearBottom = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.body.bold())
+                .foregroundStyle(.primary)
+                .frame(width: 40, height: 40)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+        }
+        .padding(.bottom, 8)
+        .opacity(isNearBottom ? 0 : 1)
+        .scaleEffect(isNearBottom ? 0.5 : 1)
+        .animation(.easeInOut(duration: 0.2), value: isNearBottom)
+        .allowsHitTesting(!isNearBottom)
     }
 
     private var welcomeView: some View {
@@ -46,33 +120,41 @@ struct MessageThreadView: View {
     }
 }
 
-// MARK: - Message Cell
+// MARK: - Message Cell (wraps in EquatableView to prevent unnecessary re-renders)
 
 struct MessageCell: View {
     let message: DisplayMessage
 
     var body: some View {
         switch message.role {
-        case .user:
-            userMessage
-        case .assistant:
-            assistantMessage
-        case .system:
-            systemMessage
+        case .user: userMessage
+        case .assistant: assistantMessage
+        case .system: systemMessage
         }
     }
 
     private var userMessage: some View {
         HStack {
             Spacer(minLength: 60)
-            VStack(alignment: .trailing, spacing: 0) {
+            VStack(alignment: .trailing, spacing: 6) {
                 ForEach(Array(message.content.enumerated()), id: \.offset) { _, part in
-                    if case .text(let text) = part {
+                    switch part {
+                    case .text(let text):
                         Text(text)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(Color.accentColor.opacity(0.15))
                             .clipShape(RoundedRectangle(cornerRadius: 16))
+                    case .image(let data):
+                        if let uiImage = UIImage(data: data) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 200, maxHeight: 200)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    default:
+                        EmptyView()
                     }
                 }
             }
@@ -82,14 +164,14 @@ struct MessageCell: View {
     }
 
     private var assistantMessage: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(message.content.enumerated()), id: \.offset) { _, part in
                 contentPartView(part)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder
@@ -97,14 +179,20 @@ struct MessageCell: View {
         switch part {
         case .text(let text):
             if !text.isEmpty {
-                // For now, render as plain text. Phase 3b adds Textual markdown.
-                Text(text)
-                    .textSelection(.enabled)
+                SafeMarkdownView(text: text)
             }
         case .reasoning(let text):
             ThinkingBlockView(text: text)
         case .toolCall(let tc):
             ToolCardView(toolCall: tc)
+        case .image(let data):
+            if let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
         }
     }
 
@@ -124,27 +212,63 @@ struct MessageCell: View {
     }
 }
 
+// MARK: - Safe Markdown View
+
+/// Uses StructuredText for complete markdown, plain Text for mid-stream partials.
+struct SafeMarkdownView: View {
+    let text: String
+
+    var body: some View {
+        if isLikelyCompleteMarkdown {
+            StructuredText(markdown: text)
+                .textual.structuredTextStyle(.gitHub)
+                .textual.textSelection(.enabled)
+        } else {
+            Text(text)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var isLikelyCompleteMarkdown: Bool {
+        let fenceCount = text.components(separatedBy: "```").count - 1
+        return fenceCount % 2 == 0
+    }
+}
+
 // MARK: - Thinking Block
 
 struct ThinkingBlockView: View {
     let text: String
-    @State private var isExpanded = false
+    @State private var isExpanded = true
+
+    private var preview: String {
+        let firstLine = text.components(separatedBy: .newlines).first(where: { !$0.isEmpty }) ?? ""
+        return firstLine.count > 80 ? String(firstLine.prefix(80)) + "..." : firstLine
+    }
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            Text(text)
+            SafeMarkdownView(text: text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .textSelection(.enabled)
                 .padding(.top, 4)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "brain")
-                    .font(.caption)
-                Text("Thinking")
-                    .font(.caption.bold())
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain")
+                        .font(.caption)
+                    Text("Thinking")
+                        .font(.caption.bold())
+                }
+                .foregroundStyle(.purple.opacity(0.8))
+
+                if !isExpanded && !preview.isEmpty {
+                    Text(preview)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             }
-            .foregroundStyle(.purple.opacity(0.8))
         }
         .padding(10)
         .background(Color(.systemGray6))
@@ -157,8 +281,34 @@ struct ThinkingBlockView: View {
 struct ToolCardView: View {
     let toolCall: ToolCallPart
 
-    var body: some View {
+    /// Normalized tool name that handles Codex aliases.
+    private var normalizedName: String {
         switch toolCall.toolName {
+        case "Bash", "exec_command", "command_execution", "Shell":
+            return "Bash"
+        case "Edit", "StrReplace", "str_replace_editor":
+            return "Edit"
+        case "Write", "CreateFile", "create_file":
+            return "Write"
+        case "Read", "ReadFile", "read_file", "View":
+            return "Read"
+        case "Glob", "GlobTool", "glob":
+            return "Glob"
+        case "Grep", "GrepTool", "grep", "SearchFiles":
+            return "Grep"
+        case "Task", "Subagent":
+            return "Task"
+        case "TodoWrite", "TodoRead":
+            return "TodoWrite"
+        case "WebSearch":
+            return "WebSearch"
+        default:
+            return toolCall.toolName
+        }
+    }
+
+    var body: some View {
+        switch normalizedName {
         case "Bash":
             BashToolCard(toolCall: toolCall)
         case "Edit":
