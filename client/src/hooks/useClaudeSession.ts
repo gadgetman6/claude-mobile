@@ -211,13 +211,47 @@ export function useClaudeSession() {
 
       case "user": {
         const parentId = msg.parent_tool_use_id as string | null;
+        const rawContent = (msg.message as Record<string, unknown>)?.content;
         if (parentId) break; // Skip subagent user messages
+
+        // Handle tool results — attach to matching tool-call in last assistant message
+        if (Array.isArray(rawContent)) {
+          const toolResults = rawContent.filter((b: Record<string, unknown>) => b.type === "tool_result");
+          if (toolResults.length > 0) {
+            setMessages((prev) => {
+              const next = [...prev];
+              for (let i = next.length - 1; i >= 0; i--) {
+                const m = next[i];
+                if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+                let updated = false;
+                const newContent = (m.content as unknown[]).map((part: unknown) => {
+                  const p = part as Record<string, unknown>;
+                  if (p.type !== "tool-call") return p;
+                  const tr = toolResults.find((r: Record<string, unknown>) => r.tool_use_id === p.toolCallId);
+                  if (!tr) return p;
+                  updated = true;
+                  const rc = (tr as Record<string, unknown>).content;
+                  const resultStr = typeof rc === "string" ? rc
+                    : Array.isArray(rc) ? (rc as Record<string, unknown>[]).filter(r => r.type === "text").map(r => r.text).join("\n")
+                    : "";
+                  return { ...p, result: resultStr };
+                });
+                if (updated) {
+                  next[i] = { ...m, content: newContent as typeof m.content };
+                  break;
+                }
+              }
+              return next;
+            });
+            break;
+          }
+        }
+
         if (msg.isReplay) {
-          const raw = (msg.message as Record<string, unknown>)?.content;
-          const content = typeof raw === "string"
-            ? raw
-            : Array.isArray(raw)
-              ? raw.filter((b: Record<string, unknown>) => b.type === "text").map((b: Record<string, unknown>) => b.text).join("\n") || ""
+          const content = typeof rawContent === "string"
+            ? rawContent
+            : Array.isArray(rawContent)
+              ? (rawContent as Record<string, unknown>[]).filter(b => b.type === "text").map(b => b.text).join("\n") || ""
               : "";
           if (content) {
             setMessages((prev) => [...prev, { role: "user" as const, content }]);
