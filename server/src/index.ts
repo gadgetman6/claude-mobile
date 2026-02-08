@@ -1,13 +1,24 @@
+import { createServer } from "http";
+import { readFile, stat, access, readdir, open } from "fs/promises";
+import { join, dirname, extname } from "path";
+import { fileURLToPath } from "url";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
 import { Server } from "socket.io";
-import { Server as Engine } from "@socket.io/bun-engine";
 import { AgentSession } from "./agent.js";
 import { CodexSession } from "./agent-codex.js";
 import { getGitStatus } from "./git.js";
 import { getVapidPublicKey, setSubscription, removeSubscription, sendPushNotification } from "./push.js";
 import type { ServerMessage, HistoryEntry, HistoryContentPart, ContentBlock } from "./types.js";
 import { parseTranscript } from "@constellos/claude-code-kit/transcripts";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const PORT = parseInt(process.env.PORT ?? "3333");
 const HOST = process.env.HOST ?? "0.0.0.0";
@@ -30,11 +41,16 @@ app.get("/api/git-diff", async (c) => {
   const file = c.req.query("file");
   if (!file) return c.json({ error: "No file" }, 400);
   try {
-    const { $ } = await import("bun");
-    // Get the original (HEAD) version and the working version
-    const oldContent = await $`git -C ${cwd} show HEAD:${file}`.text().catch(() => "");
+    // Get the original (HEAD) version
+    let oldContent = "";
+    try {
+      const { stdout } = await execFileAsync("git", ["-C", cwd, "show", `HEAD:${file}`], { timeout: 5000 });
+      oldContent = stdout;
+    } catch {}
+    // Get the working version
     const filePath = file.startsWith("/") ? file : `${cwd}/${file}`;
-    const newContent = await Bun.file(filePath).text().catch(() => "");
+    let newContent = "";
+    try { newContent = await readFile(filePath, "utf-8"); } catch {}
     return c.json({ oldContent, newContent, filePath });
   } catch {
     return c.json({ error: "Failed to get diff" }, 500);
@@ -49,7 +65,6 @@ app.get("/api/sessions", async (c) => {
   const sessionsDir = `${homeDir}/.claude/projects/${projectKey}`;
 
   try {
-    const { readdir, stat, open } = await import("fs/promises");
     const files = await readdir(sessionsDir);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
 
@@ -106,7 +121,6 @@ app.get("/api/sessions", async (c) => {
             await fd.read(tailBuf, 0, tailSize, fileSize - tailSize);
             const tailStr = tailBuf.toString("utf-8");
             const tailLines = tailStr.split("\n");
-            // Scan from end to find last result
             for (let i = tailLines.length - 1; i >= 0; i--) {
               const line = tailLines[i].trim();
               if (!line) continue;
@@ -131,7 +145,6 @@ app.get("/api/sessions", async (c) => {
         }
 
         if (firstMessage) {
-          // For running session, use live usage
           if (currentSessionId === id && currentSession != null) {
             const liveUsage = currentSession.currentUsage;
             totalTokens = liveUsage.inputTokens + liveUsage.outputTokens;
@@ -160,10 +173,6 @@ app.get("/api/codex-sessions", async (c) => {
   const sessionsDir = `${homeDir}/.codex/sessions`;
 
   try {
-    const { readdir, stat, open } = await import("fs/promises");
-    const { join } = await import("path");
-
-    // Walk year/month/day directories to find JSONL files
     const sessions: Array<{
       id: string;
       timestamp: string;
@@ -184,7 +193,6 @@ app.get("/api/codex-sessions", async (c) => {
             try {
               const filePath = join(dayDir, file);
               const fileStat = await stat(filePath);
-              // Read first 32KB to get session_meta and first real user message
               const fd = await open(filePath, "r");
               try {
                 const readSize = Math.min(32768, fileStat.size);
@@ -245,11 +253,9 @@ app.get("/api/file", async (c) => {
   const filePath = c.req.query("path");
   if (!filePath) return c.json({ error: "No path" }, 400);
   try {
-    const file = Bun.file(filePath);
-    if (!(await file.exists())) return c.json({ error: "Not found" }, 404);
-    const size = file.size;
-    if (size > 1024 * 1024) return c.json({ error: "File too large" }, 413);
-    const content = await file.text();
+    const fileStat = await stat(filePath);
+    if (fileStat.size > 1024 * 1024) return c.json({ error: "File too large" }, 413);
+    const content = await readFile(filePath, "utf-8");
     return c.json({ content });
   } catch {
     return c.json({ error: "Read failed" }, 500);
@@ -279,13 +285,15 @@ app.post("/api/push/unsubscribe", async (c) => {
 });
 
 // Serve built client in production
-const clientDist = `${import.meta.dir}/../../client/dist`;
+const clientDist = join(__dirname, "../../client/dist");
 app.get("/*", async (c, next) => {
   const path = new URL(c.req.url).pathname;
-  const filePath = path === "/" ? "/index.html" : path;
-  const file = Bun.file(clientDist + filePath);
-  if (await file.exists()) {
-    const ext = filePath.split(".").pop() ?? "";
+  const reqFilePath = path === "/" ? "/index.html" : path;
+  const fullPath = join(clientDist, reqFilePath);
+  try {
+    await access(fullPath);
+    const content = await readFile(fullPath);
+    const ext = extname(reqFilePath).slice(1);
     const mimeTypes: Record<string, string> = {
       html: "text/html",
       js: "text/javascript",
@@ -298,18 +306,22 @@ app.get("/*", async (c, next) => {
     const headers: Record<string, string> = {
       "Content-Type": mimeTypes[ext] ?? "application/octet-stream",
     };
-    if (ext === "html" || filePath.includes("sw.js") || filePath.includes("registerSW")) {
+    if (ext === "html" || reqFilePath.includes("sw.js") || reqFilePath.includes("registerSW")) {
       headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
     }
-    return new Response(file, { headers });
+    return new Response(content, { headers });
+  } catch {
+    // SPA fallback
+    try {
+      const indexPath = join(clientDist, "index.html");
+      const indexContent = await readFile(indexPath);
+      return new Response(indexContent, {
+        headers: { "Content-Type": "text/html" },
+      });
+    } catch {
+      return next();
+    }
   }
-  const index = Bun.file(clientDist + "/index.html");
-  if (await index.exists()) {
-    return new Response(index, {
-      headers: { "Content-Type": "text/html" },
-    });
-  }
-  return next();
 });
 
 // Global session state — survives reconnects (single-user app)
@@ -322,12 +334,12 @@ let currentPermissionMode: string = "default";
 let messageCache: ServerMessage[] = [];
 let lastAssistantText: string = "";
 
-// Socket.IO setup
-const io = new Server();
-const engine = new Engine({
+// Create HTTP server + Socket.IO (standard Node approach, no Bun engine needed)
+const httpServer = createServer();
+const io = new Server(httpServer, {
   cors: { origin: "*" },
+  path: "/engine.io/",
 });
-io.bind(engine);
 
 function sendToClient(msg: ServerMessage) {
   // Track session metadata from SDK messages
@@ -356,7 +368,6 @@ function sendToClient(msg: ServerMessage) {
 
   if (msg.type === "sdk_message") {
     const sdkMsg = msg.message as any;
-    // Track last assistant text for notifications
     if (sdkMsg?.type === "assistant" && !sdkMsg.parent_tool_use_id) {
       const blocks = sdkMsg.message?.content;
       if (Array.isArray(blocks)) {
@@ -386,10 +397,7 @@ function sendToClient(msg: ServerMessage) {
     }
   }
 
-  // Push to cache (kept for potential future use)
   messageCache.push(msg);
-
-  // Emit via Socket.IO to all connected clients in the session room
   io.to("session").emit("message", msg);
 }
 
@@ -397,10 +405,7 @@ function sendToClient(msg: ServerMessage) {
 async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
   const homeDir = process.env.HOME ?? "/home/debian";
   const sessionsDir = `${homeDir}/.codex/sessions`;
-  const { readdir, readFile } = await import("fs/promises");
-  const { join } = await import("path");
 
-  // Find the JSONL file matching this session ID
   const years = await readdir(sessionsDir).catch(() => [] as string[]);
   for (const year of years.reverse()) {
     const months = await readdir(join(sessionsDir, year)).catch(() => [] as string[]);
@@ -424,7 +429,6 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
             const p = parsed.payload;
             if (!p) continue;
 
-            // User messages
             if (p.role === "user") {
               const textParts = (p.content ?? [])
                 .filter((c: any) => c.type === "input_text" && c.text?.length < 500 && !c.text?.startsWith("<") && !c.text?.startsWith("#"))
@@ -432,9 +436,7 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
               if (textParts.length > 0) {
                 history.push({ role: "user", content: textParts.join("\n") });
               }
-            }
-            // Assistant text messages
-            else if (p.role === "assistant") {
+            } else if (p.role === "assistant") {
               const text = (p.content ?? [])
                 .filter((c: any) => c.type === "output_text")
                 .map((c: any) => c.text)
@@ -442,9 +444,7 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
               if (text) {
                 history.push({ role: "assistant", content: [{ type: "text", text }] });
               }
-            }
-            // Reasoning
-            else if (p.type === "reasoning") {
+            } else if (p.type === "reasoning") {
               const raw = p.summary ?? p.content ?? "";
               const text = Array.isArray(raw)
                 ? raw.filter((s: any) => s.type === "summary_text").map((s: any) => s.text).join("\n")
@@ -457,13 +457,10 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
                   history.push({ role: "assistant", content: [{ type: "reasoning", text }] });
                 }
               }
-            }
-            // Function calls (tool use)
-            else if (p.type === "function_call") {
+            } else if (p.type === "function_call") {
               let args: Record<string, unknown> = {};
               try { args = typeof p.arguments === "string" ? JSON.parse(p.arguments) : (p.arguments ?? {}); } catch { args = { command: p.arguments }; }
               const toolName = p.name === "exec_command" ? "Bash" : (p.name ?? "tool");
-              // Map Codex exec_command {cmd} to Bash tool UI {command}
               if (toolName === "Bash" && args.cmd && !args.command) {
                 args.command = args.cmd;
               }
@@ -477,9 +474,7 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
                 pendingCalls.set(toolCallId, { histIdx: history.length, partIdx: 0 });
                 history.push({ role: "assistant", content: [part] });
               }
-            }
-            // Function call output (tool result)
-            else if (p.type === "function_call_output") {
+            } else if (p.type === "function_call_output") {
               const callId = p.call_id ?? "";
               const pending = pendingCalls.get(callId);
               if (pending) {
@@ -509,9 +504,7 @@ function transcriptToHistory(transcript: { messages: any[] }): HistoryEntry[] {
 
   for (const msg of transcript.messages) {
     if (msg.type === "user") {
-      // Skip internal tool-result user messages (they have parent_tool_use_id)
       if (msg.parentUuid && msg.message?.content && Array.isArray(msg.message.content)) {
-        // Attach tool results to pending tool calls
         for (const block of msg.message.content) {
           if (block.tool_use_id) {
             const pending = pendingTools.get(block.tool_use_id);
@@ -554,7 +547,6 @@ function transcriptToHistory(transcript: { messages: any[] }): HistoryEntry[] {
         }
       }
       if (parts.length > 0) {
-        // Merge consecutive assistant messages
         const last = history[history.length - 1];
         if (last?.role === "assistant") {
           const offset = last.content.length;
@@ -579,7 +571,6 @@ io.on("connection", (socket) => {
   socket.on("reconnect_request", async () => {
     if (currentSessionId && currentCwd) {
       console.log("[socket.io] Reconnecting to session:", currentSessionId, `(${messageCache.length} cached messages)`);
-      // Signal client to clear messages before replay
       socket.emit("message", { type: "session_state",
         sessionId: currentSessionId,
         cwd: currentCwd,
@@ -587,11 +578,9 @@ io.on("connection", (socket) => {
         permissionMode: currentPermissionMode,
         isStreaming: currentSession?.isStreaming ?? false,
       } satisfies ServerMessage);
-      // Replay all cached messages — client rebuilds full state
       for (const msg of messageCache) {
         socket.emit("message", msg);
       }
-      // Send current token usage
       if (currentSession) {
         socket.emit("message", {
           type: "token_usage",
@@ -599,7 +588,6 @@ io.on("connection", (socket) => {
         } satisfies ServerMessage);
       }
     } else {
-      // Fallback: try loading from JSONL transcript
       if (currentCwd && currentSessionId) {
         try {
           const homeDir = process.env.HOME ?? "/home/debian";
@@ -636,13 +624,11 @@ io.on("connection", (socket) => {
         currentSession = null;
       }
 
-      // Clear message cache for new sessions, keep for resume
       if (!data.resume) {
         messageCache = [];
       }
 
       if (provider === "codex") {
-        // Load Codex conversation history when resuming
         if (data.resume) {
           try {
             const history = await loadCodexHistory(data.resume);
@@ -660,7 +646,6 @@ io.on("connection", (socket) => {
           resume: data.resume,
         });
       } else {
-        // Load and send conversation history from JSONL when resuming
         if (data.resume) {
           try {
             const homeDir = process.env.HOME ?? "/home/debian";
@@ -765,39 +750,10 @@ io.on("connection", (socket) => {
   });
 });
 
-// TLS config
-const tlsCert = `${import.meta.dir}/../tls.crt`;
-const tlsKey = `${import.meta.dir}/../tls.key`;
-const hasTLS =
-  await Bun.file(tlsCert).exists() && await Bun.file(tlsKey).exists();
+// Use Hono's node-server adapter, attach to the same HTTP server as Socket.IO
+const honoHandler = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
+  console.log(`Server starting on http://${HOST}:${info.port}`);
+});
 
-if (hasTLS) {
-  console.log(`Server starting on https://${HOST}:${PORT}`);
-} else {
-  console.log(`Server starting on http://${HOST}:${PORT} (no TLS certs found)`);
-}
-
-const engineHandler = engine.handler();
-
-export default {
-  port: PORT,
-  hostname: HOST,
-  ...engineHandler,
-  fetch(req: Request, server: any) {
-    const url = new URL(req.url);
-    // Route engine.io requests to Socket.IO engine
-    if (url.pathname.startsWith("/engine.io")) {
-      return engineHandler.fetch(req, server);
-    }
-    // Everything else goes to Hono (REST + static files)
-    return app.fetch(req, server);
-  },
-  ...(hasTLS
-    ? {
-        tls: {
-          cert: Bun.file(tlsCert),
-          key: Bun.file(tlsKey),
-        },
-      }
-    : {}),
-};
+// Attach Socket.IO to the same HTTP server that Hono creates
+io.attach(honoHandler);

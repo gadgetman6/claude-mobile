@@ -1,17 +1,29 @@
-import { $ } from "bun";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+async function run(cmd: string, args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync(cmd, args, { cwd, timeout: 10000 });
+    return stdout;
+  } catch {
+    return "";
+  }
+}
 
 export async function getGitStatus(cwd: string) {
   try {
     const [status, diff, branch] = await Promise.all([
-      $`git -C ${cwd} status --porcelain`.text().catch(() => ""),
-      $`git -C ${cwd} diff --stat`.text().catch(() => ""),
-      $`git -C ${cwd} rev-parse --abbrev-ref HEAD`.text().catch(() => "unknown"),
+      run("git", ["-C", cwd, "status", "--porcelain"], cwd),
+      run("git", ["-C", cwd, "diff", "--stat"], cwd),
+      run("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], cwd),
     ]);
 
     return {
       status: status.trim(),
       diff: diff.trim(),
-      branch: branch.trim(),
+      branch: branch.trim() || "unknown",
     };
   } catch {
     return {
