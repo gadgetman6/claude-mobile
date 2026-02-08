@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { Server } from "socket.io";
 import { Server as Engine } from "@socket.io/bun-engine";
 import { AgentSession } from "./agent.js";
+import { CodexSession } from "./agent-codex.js";
 import { getGitStatus } from "./git.js";
 import { getVapidPublicKey, setSubscription, removeSubscription, sendPushNotification } from "./push.js";
 import type { ServerMessage, HistoryEntry, HistoryContentPart, ContentBlock } from "./types.js";
@@ -153,6 +154,92 @@ app.get("/api/sessions", async (c) => {
   }
 });
 
+// List recent Codex sessions
+app.get("/api/codex-sessions", async (c) => {
+  const homeDir = process.env.HOME ?? "/home/debian";
+  const sessionsDir = `${homeDir}/.codex/sessions`;
+
+  try {
+    const { readdir, stat, open } = await import("fs/promises");
+    const { join } = await import("path");
+
+    // Walk year/month/day directories to find JSONL files
+    const sessions: Array<{
+      id: string;
+      timestamp: string;
+      firstMessage: string;
+      model?: string;
+      isRunning?: boolean;
+    }> = [];
+
+    const years = await readdir(sessionsDir).catch(() => [] as string[]);
+    for (const year of years.slice(-1)) {
+      const months = await readdir(join(sessionsDir, year)).catch(() => [] as string[]);
+      for (const month of months.slice(-2)) {
+        const days = await readdir(join(sessionsDir, year, month)).catch(() => [] as string[]);
+        for (const day of days) {
+          const dayDir = join(sessionsDir, year, month, day);
+          const files = await readdir(dayDir).catch(() => [] as string[]);
+          for (const file of files.filter(f => f.endsWith(".jsonl")).slice(-10)) {
+            try {
+              const filePath = join(dayDir, file);
+              const fileStat = await stat(filePath);
+              // Read first 32KB to get session_meta and first real user message
+              const fd = await open(filePath, "r");
+              try {
+                const readSize = Math.min(32768, fileStat.size);
+                const buf = Buffer.alloc(readSize);
+                const { bytesRead } = await fd.read(buf, 0, readSize, 0);
+                const str = buf.toString("utf-8", 0, bytesRead);
+                let id = "";
+                let timestamp = fileStat.mtime.toISOString();
+                let firstMessage = "";
+                let model: string | undefined;
+                for (const line of str.split("\n")) {
+                  if (!line.trim()) continue;
+                  try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.type === "session_meta") {
+                      id = parsed.payload?.id ?? "";
+                      timestamp = parsed.payload?.timestamp ?? timestamp;
+                    }
+                    if (parsed.type === "response_item" && parsed.payload?.role === "user") {
+                      const content = parsed.payload?.content;
+                      if (Array.isArray(content)) {
+                        const textPart = content.find((c: any) =>
+                          c.type === "input_text" && c.text?.length < 500
+                          && !c.text?.startsWith("<") && !c.text?.startsWith("#")
+                        );
+                        if (textPart) {
+                          firstMessage = textPart.text.slice(0, 100);
+                        }
+                      }
+                    }
+                  } catch { continue; }
+                  if (id && firstMessage) break;
+                }
+                if (id && firstMessage) {
+                  sessions.push({
+                    id, timestamp, firstMessage, model,
+                    isRunning: currentProvider === "codex" && currentSessionId === id && currentSession != null,
+                  });
+                }
+              } finally {
+                await fd.close();
+              }
+            } catch { continue; }
+          }
+        }
+      }
+    }
+
+    sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return c.json(sessions.slice(0, 10));
+  } catch {
+    return c.json([]);
+  }
+});
+
 // Read file contents (for git panel file viewer)
 app.get("/api/file", async (c) => {
   const filePath = c.req.query("path");
@@ -226,7 +313,8 @@ app.get("/*", async (c, next) => {
 });
 
 // Global session state — survives reconnects (single-user app)
-let currentSession: AgentSession | null = null;
+let currentSession: AgentSession | CodexSession | null = null;
+let currentProvider: "claude" | "codex" = "claude";
 let currentSessionId: string | null = null;
 let currentCwd: string | null = null;
 let currentModel: string = "";
@@ -427,10 +515,13 @@ io.on("connection", (socket) => {
     permissionMode?: string;
     enable1mContext?: boolean;
     resume?: string;
+    provider?: "claude" | "codex";
   }) => {
     try {
-      console.log("[socket.io] Starting session:", data.cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
+      const provider = data.provider ?? "claude";
+      console.log("[socket.io] Starting session:", provider, data.cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
       currentCwd = data.cwd;
+      currentProvider = provider;
       if (currentSession) {
         currentSession.close();
         currentSession = null;
@@ -441,30 +532,39 @@ io.on("connection", (socket) => {
         messageCache = [];
       }
 
-      // Load and send conversation history from JSONL when resuming
-      if (data.resume) {
-        try {
-          const homeDir = process.env.HOME ?? "/home/debian";
-          const projectKey = data.cwd.replace(/\//g, "-");
-          const filePath = `${homeDir}/.claude/projects/${projectKey}/${data.resume}.jsonl`;
-          const transcript = await parseTranscript(filePath);
-          const history = transcriptToHistory(transcript);
-          if (history.length > 0) {
-            socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+      if (provider === "codex") {
+        currentSession = new CodexSession(sendToClient);
+        await (currentSession as CodexSession).start({
+          cwd: data.cwd,
+          model: data.model,
+          resume: data.resume,
+        });
+      } else {
+        // Load and send conversation history from JSONL when resuming
+        if (data.resume) {
+          try {
+            const homeDir = process.env.HOME ?? "/home/debian";
+            const projectKey = data.cwd.replace(/\//g, "-");
+            const filePath = `${homeDir}/.claude/projects/${projectKey}/${data.resume}.jsonl`;
+            const transcript = await parseTranscript(filePath);
+            const history = transcriptToHistory(transcript);
+            if (history.length > 0) {
+              socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+            }
+          } catch (err) {
+            console.error("[socket.io] Failed to load resume history:", err);
           }
-        } catch (err) {
-          console.error("[socket.io] Failed to load resume history:", err);
         }
-      }
 
-      currentSession = new AgentSession(sendToClient);
-      await currentSession.start({
-        cwd: data.cwd,
-        model: data.model,
-        permissionMode: data.permissionMode as any,
-        enable1mContext: data.enable1mContext,
-        resume: data.resume,
-      });
+        currentSession = new AgentSession(sendToClient);
+        await (currentSession as AgentSession).start({
+          cwd: data.cwd,
+          model: data.model,
+          permissionMode: data.permissionMode as any,
+          enable1mContext: data.enable1mContext,
+          resume: data.resume,
+        });
+      }
     } catch (err) {
       console.error("[socket.io] start_session error:", err);
       socket.emit("message", {

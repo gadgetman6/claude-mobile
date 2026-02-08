@@ -48,6 +48,7 @@ export function App() {
   const [cwd, setCwd] = useState(() => {
     try { return localStorage.getItem(CWD_KEY) ?? "/home/debian"; } catch { return "/home/debian"; }
   });
+  const [provider, setProvider] = useState<"claude" | "codex">("claude");
   const [startModel, setStartModel] = useState("claude-opus-4-6");
   const [startPermMode, setStartPermMode] = useState<"default" | "acceptEdits" | "bypassPermissions">("bypassPermissions");
   const [enable1m, setEnable1m] = useState(true);
@@ -74,18 +75,19 @@ export function App() {
       try { localStorage.setItem(CWD_KEY, dir); } catch {}
     }
     if (!dir || inSession) return;
-    fetch(`/api/sessions?cwd=${encodeURIComponent(dir)}`)
+    const endpoint = provider === "codex" ? "/api/codex-sessions" : `/api/sessions?cwd=${encodeURIComponent(dir)}`;
+    fetch(endpoint)
       .then((r) => r.json())
       .then((data) => setRecentSessions(data))
       .catch(() => setRecentSessions([]));
-  }, [cwd, inSession]);
+  }, [cwd, inSession, provider]);
 
   const handleStartSession = useCallback((resumeId?: string) => {
     const dir = cwd.trim() || undefined;
     if (!dir) return;
     setInSession(true);
-    session.startSession(dir, startModel, startPermMode, enable1m, resumeId);
-  }, [cwd, startModel, startPermMode, enable1m, session]);
+    session.startSession(dir, startModel, startPermMode, enable1m, resumeId, provider);
+  }, [cwd, startModel, startPermMode, enable1m, provider, session]);
 
   const handleBack = useCallback(() => {
     setInSession(false);
@@ -127,33 +129,63 @@ export function App() {
               onKeyDown={(e) => e.key === "Enter" && handleStartSession()}
             />
 
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                className={`btn ${provider === "claude" ? "btn-primary" : "btn-secondary"}`}
+                style={{ flex: 1, padding: "8px" }}
+                onClick={() => { setProvider("claude"); setStartModel("claude-opus-4-6"); }}
+              >
+                Claude
+              </button>
+              <button
+                className={`btn ${provider === "codex" ? "btn-primary" : "btn-secondary"}`}
+                style={{ flex: 1, padding: "8px" }}
+                onClick={() => { setProvider("codex"); setStartModel("gpt-5.3-codex"); }}
+              >
+                Codex
+              </button>
+            </div>
+
             <select
               className="settings-select"
               value={startModel}
               onChange={(e) => setStartModel(e.target.value)}
             >
-              <option value="claude-opus-4-6">Claude Opus 4.6</option>
-              <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              {provider === "claude" ? (
+                <>
+                  <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                  <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                </>
+              ) : (
+                <>
+                  <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
+                  <option value="o4-mini">O4 Mini</option>
+                </>
+              )}
             </select>
 
-            <select
-              className="settings-select"
-              value={startPermMode}
-              onChange={(e) => setStartPermMode(e.target.value as "default" | "acceptEdits" | "bypassPermissions")}
-            >
-              <option value="default">Default permissions</option>
-              <option value="acceptEdits">Accept edits</option>
-              <option value="bypassPermissions">Bypass all (dangerous)</option>
-            </select>
+            {provider === "claude" && (
+              <>
+                <select
+                  className="settings-select"
+                  value={startPermMode}
+                  onChange={(e) => setStartPermMode(e.target.value as "default" | "acceptEdits" | "bypassPermissions")}
+                >
+                  <option value="default">Default permissions</option>
+                  <option value="acceptEdits">Accept edits</option>
+                  <option value="bypassPermissions">Bypass all (dangerous)</option>
+                </select>
 
-            <div className="settings-toggle">
-              <span style={{ fontSize: 13 }}>1M Context (Opus 4.6)</span>
-              <div
-                className={`toggle-switch ${enable1m ? "active" : ""}`}
-                onClick={() => setEnable1m(!enable1m)}
-              />
-            </div>
+                <div className="settings-toggle">
+                  <span style={{ fontSize: 13 }}>1M Context (Opus 4.6)</span>
+                  <div
+                    className={`toggle-switch ${enable1m ? "active" : ""}`}
+                    onClick={() => setEnable1m(!enable1m)}
+                  />
+                </div>
+              </>
+            )}
 
             <button
               className="btn btn-primary"
@@ -226,7 +258,7 @@ export function App() {
                 &#8592;
               </button>
               <div className={`connection-dot ${session.connectionState}`} title={session.connectionState} />
-              <h1>Claude</h1>
+              <h1>{provider === "codex" ? "Codex" : "Claude"}</h1>
               <span className={`perm-badge ${perm.cls}`}>{perm.label}</span>
             </div>
             <div className="header-right">

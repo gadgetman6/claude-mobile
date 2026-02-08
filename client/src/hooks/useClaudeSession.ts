@@ -575,12 +575,12 @@ export function useClaudeSession() {
   // --- Actions ---
 
   const startSession = useCallback(
-    (cwd: string, model?: string, mode?: PermissionMode, enable1m?: boolean, resume?: string) => {
+    (cwd: string, model?: string, mode?: PermissionMode, enable1m?: boolean, resume?: string, provider?: "claude" | "codex") => {
       setMessages([]);
       setUsage({ ...emptyUsage });
       nestedContentMapRef.current.clear();
       setNestedContentVersion(0);
-      emit("start_session", { cwd, model, permissionMode: mode, enable1mContext: enable1m, resume });
+      emit("start_session", { cwd, model, permissionMode: mode, enable1mContext: enable1m, resume, provider });
     },
     [emit]
   );
