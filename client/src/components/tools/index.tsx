@@ -4,6 +4,7 @@ import { WriteToolUI } from "./WriteToolUI";
 import { ReadToolUI } from "./ReadToolUI";
 import { GlobToolUI, GrepToolUI } from "./SearchToolUI";
 import { TaskToolUI } from "./TaskToolUI";
+import { TodoToolUI } from "./TodoToolUI";
 import { GenericToolUI } from "./GenericToolUI";
 
 /**
@@ -20,6 +21,7 @@ export const toolUIs = [
   GlobToolUI,
   GrepToolUI,
   TaskToolUI,
+  TodoToolUI,
 ] as const;
 
 export {
@@ -30,5 +32,6 @@ export {
   GlobToolUI,
   GrepToolUI,
   TaskToolUI,
+  TodoToolUI,
   GenericToolUI,
 };

@@ -19,6 +19,8 @@ type RecentSession = {
   firstMessage: string;
   model?: string;
   isRunning?: boolean;
+  totalTokens?: number;
+  costUsd?: number;
 };
 
 const PERM_LABELS: Record<string, { label: string; cls: string }> = {
@@ -190,6 +192,14 @@ export function App() {
                         <div className="question-option-desc">
                           {s.isRunning && <span style={{ color: "var(--success)", marginRight: 4 }}>&#9679; running</span>}
                           {new Date(s.timestamp).toLocaleDateString()} {new Date(s.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {s.totalTokens != null && s.totalTokens > 0 && (
+                            <span style={{ marginLeft: 6 }}>
+                              {s.totalTokens >= 1_000_000 ? `${(s.totalTokens / 1_000_000).toFixed(1)}M` : s.totalTokens >= 1_000 ? `${(s.totalTokens / 1_000).toFixed(1)}k` : s.totalTokens} tok
+                            </span>
+                          )}
+                          {s.costUsd != null && s.costUsd > 0 && (
+                            <span style={{ marginLeft: 4, color: "var(--warning)" }}>${s.costUsd.toFixed(2)}</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -275,6 +285,7 @@ export function App() {
           {showGit && (
             <GitStatusPanel
               gitStatus={session.gitStatus}
+              cwd={cwd}
               onRefresh={() => session.fetchGitStatus(cwd || undefined)}
               onClose={() => setShowGit(false)}
             />

@@ -248,24 +248,32 @@ export class AgentSession {
   }
 
   private updateUsageFromResult(msg: SDKResultMessage) {
-    if (msg.usage) {
+    // Use modelUsage as source of truth — sum across all models
+    if (msg.modelUsage) {
+      let totalIn = 0, totalOut = 0, totalCacheRead = 0, totalCacheCreate = 0, totalCost = 0;
+      for (const mu of Object.values(msg.modelUsage)) {
+        totalIn += mu.inputTokens ?? 0;
+        totalOut += mu.outputTokens ?? 0;
+        totalCacheRead += mu.cacheReadInputTokens ?? 0;
+        totalCacheCreate += mu.cacheCreationInputTokens ?? 0;
+        totalCost += mu.costUSD ?? 0;
+        if (mu.contextWindow) this.usage.contextWindow = mu.contextWindow;
+        if (mu.maxOutputTokens) this.usage.maxOutputTokens = mu.maxOutputTokens;
+      }
+      this.usage.inputTokens = totalIn;
+      this.usage.outputTokens = totalOut;
+      this.usage.cacheReadTokens = totalCacheRead;
+      this.usage.cacheCreationTokens = totalCacheCreate;
+      this.usage.costUsd = totalCost;
+    } else if (msg.usage) {
+      // Fallback to raw API usage
       this.usage.inputTokens = (msg.usage.input_tokens as number) ?? 0;
       this.usage.outputTokens = (msg.usage.output_tokens as number) ?? 0;
       this.usage.cacheReadTokens =
         (msg.usage.cache_read_input_tokens as number) ?? 0;
       this.usage.cacheCreationTokens =
         (msg.usage.cache_creation_input_tokens as number) ?? 0;
-    }
-
-    this.usage.costUsd = msg.total_cost_usd ?? 0;
-
-    // Extract context window from modelUsage
-    if (msg.modelUsage) {
-      for (const mu of Object.values(msg.modelUsage)) {
-        if (mu.contextWindow) this.usage.contextWindow = mu.contextWindow;
-        if (mu.maxOutputTokens) this.usage.maxOutputTokens = mu.maxOutputTokens;
-        this.usage.costUsd = mu.costUSD ?? this.usage.costUsd;
-      }
+      this.usage.costUsd = msg.total_cost_usd ?? 0;
     }
 
     this.sendUsage();
@@ -434,5 +442,9 @@ export class AgentSession {
 
   get isStreaming() {
     return this.streaming;
+  }
+
+  get currentUsage(): TokenUsage {
+    return { ...this.usage };
   }
 }

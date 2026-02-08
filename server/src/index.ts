@@ -23,6 +23,23 @@ app.get("/api/git-status", async (c) => {
   return c.json(result);
 });
 
+// Git diff for a specific file
+app.get("/api/git-diff", async (c) => {
+  const cwd = c.req.query("cwd") ?? process.cwd();
+  const file = c.req.query("file");
+  if (!file) return c.json({ error: "No file" }, 400);
+  try {
+    const { $ } = await import("bun");
+    // Get the original (HEAD) version and the working version
+    const oldContent = await $`git -C ${cwd} show HEAD:${file}`.text().catch(() => "");
+    const filePath = file.startsWith("/") ? file : `${cwd}/${file}`;
+    const newContent = await Bun.file(filePath).text().catch(() => "");
+    return c.json({ oldContent, newContent, filePath });
+  } catch {
+    return c.json({ error: "Failed to get diff" }, 500);
+  }
+});
+
 // List recent sessions for a given cwd
 app.get("/api/sessions", async (c) => {
   const cwd = c.req.query("cwd") ?? "/home/debian";
@@ -31,47 +48,99 @@ app.get("/api/sessions", async (c) => {
   const sessionsDir = `${homeDir}/.claude/projects/${projectKey}`;
 
   try {
-    const { readdir, stat, readFile } = await import("fs/promises");
+    const { readdir, stat, open } = await import("fs/promises");
     const files = await readdir(sessionsDir);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
 
-    const sessions: Array<{
+    type SessionInfo = {
       id: string;
       timestamp: string;
       firstMessage: string;
       model?: string;
       isRunning?: boolean;
-    }> = [];
+      totalTokens?: number;
+      costUsd?: number;
+    };
+
+    const sessions: SessionInfo[] = [];
 
     for (const file of jsonlFiles.slice(-20)) {
       try {
         const id = file.replace(".jsonl", "");
         const filePath = `${sessionsDir}/${file}`;
         const fileStat = await stat(filePath);
-        const content = await readFile(filePath, "utf-8");
-        const lines = content.split("\n");
         let firstMessage = "";
         let timestamp = fileStat.mtime.toISOString();
         let model: string | undefined;
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.type === "user" && parsed.message?.content) {
-              const content = parsed.message.content;
-              firstMessage = typeof content === "string"
-                ? content.slice(0, 100)
-                : "[complex content]";
-              timestamp = parsed.timestamp ?? timestamp;
-              model = parsed.model;
-              break;
+        let totalTokens: number | undefined;
+        let costUsd: number | undefined;
+
+        // Read first 8KB for first user message
+        const fd = await open(filePath, "r");
+        try {
+          const headBuf = Buffer.alloc(8192);
+          const { bytesRead } = await fd.read(headBuf, 0, 8192, 0);
+          const headStr = headBuf.toString("utf-8", 0, bytesRead);
+          for (const line of headStr.split("\n")) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.type === "user" && parsed.message?.content) {
+                const content = parsed.message.content;
+                firstMessage = typeof content === "string"
+                  ? content.slice(0, 100)
+                  : "[complex content]";
+                timestamp = parsed.timestamp ?? timestamp;
+                model = parsed.model;
+                break;
+              }
+            } catch { continue; }
+          }
+
+          // Read last 16KB for result message with usage
+          const fileSize = fileStat.size;
+          if (fileSize > 0) {
+            const tailSize = Math.min(16384, fileSize);
+            const tailBuf = Buffer.alloc(tailSize);
+            await fd.read(tailBuf, 0, tailSize, fileSize - tailSize);
+            const tailStr = tailBuf.toString("utf-8");
+            const tailLines = tailStr.split("\n");
+            // Scan from end to find last result
+            for (let i = tailLines.length - 1; i >= 0; i--) {
+              const line = tailLines[i].trim();
+              if (!line) continue;
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.type === "result" && parsed.modelUsage) {
+                  let inTok = 0, outTok = 0, cost = 0;
+                  for (const mu of Object.values(parsed.modelUsage) as any[]) {
+                    inTok += mu.inputTokens ?? 0;
+                    outTok += mu.outputTokens ?? 0;
+                    cost += mu.costUSD ?? 0;
+                  }
+                  totalTokens = inTok + outTok;
+                  costUsd = cost;
+                  break;
+                }
+              } catch { continue; }
             }
-          } catch { continue; }
+          }
+        } finally {
+          await fd.close();
         }
+
         if (firstMessage) {
+          // For running session, use live usage
+          if (currentSessionId === id && currentSession != null) {
+            const liveUsage = currentSession.currentUsage;
+            totalTokens = liveUsage.inputTokens + liveUsage.outputTokens;
+            costUsd = liveUsage.costUsd;
+          }
           sessions.push({
             id, timestamp, firstMessage, model,
-            isRunning: currentSessionId === id && currentSession?.isRunning === true,
+            isRunning: currentSessionId === id && currentSession != null,
+            totalTokens,
+            costUsd,
           });
         }
       } catch { continue; }
@@ -81,6 +150,22 @@ app.get("/api/sessions", async (c) => {
     return c.json(sessions.slice(0, 10));
   } catch {
     return c.json([]);
+  }
+});
+
+// Read file contents (for git panel file viewer)
+app.get("/api/file", async (c) => {
+  const filePath = c.req.query("path");
+  if (!filePath) return c.json({ error: "No path" }, 400);
+  try {
+    const file = Bun.file(filePath);
+    if (!(await file.exists())) return c.json({ error: "Not found" }, 404);
+    const size = file.size;
+    if (size > 1024 * 1024) return c.json({ error: "File too large" }, 413);
+    const content = await file.text();
+    return c.json({ content });
+  } catch {
+    return c.json({ error: "Read failed" }, 500);
   }
 });
 
@@ -318,6 +403,13 @@ io.on("connection", (socket) => {
         permissionMode: currentPermissionMode,
         isStreaming: currentSession?.isStreaming ?? false,
       } satisfies ServerMessage);
+      // Send current token usage on reconnect
+      if (currentSession) {
+        socket.emit("message", {
+          type: "token_usage",
+          usage: currentSession.currentUsage,
+        } satisfies ServerMessage);
+      }
     } else {
       socket.emit("message", { type: "session_ended", reason: "No active session" } satisfies ServerMessage);
     }

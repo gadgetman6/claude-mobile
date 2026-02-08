@@ -58,7 +58,7 @@ export const Thread: FC = () => {
           }}
         />
 
-        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer mt-auto flex w-full flex-col">
+        <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex w-full flex-col items-center pointer-events-none">
           <ThreadScrollToBottom />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
@@ -76,7 +76,7 @@ const ThreadScrollToBottom: FC = () => {
       <TooltipIconButton
         tooltip="Scroll to bottom"
         variant="outline"
-        className="aui-thread-scroll-to-bottom absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible dark:bg-background dark:hover:bg-accent"
+        className="aui-thread-scroll-to-bottom z-10 mb-2 rounded-full p-4 pointer-events-auto disabled:invisible dark:bg-background dark:hover:bg-accent shadow-lg border border-border/50"
       >
         <ArrowDownIcon />
       </TooltipIconButton>

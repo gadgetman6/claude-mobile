@@ -169,6 +169,42 @@ html, body, #root {
   max-width: 100% !important;
 }
 
+/* Syntax highlighting (shiki) */
+.syntax-highlight {
+  overflow-x: auto;
+}
+
+.syntax-highlight pre {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: "SF Mono", "Fira Code", monospace;
+  white-space: pre;
+  background: transparent !important;
+}
+
+.syntax-highlight code {
+  font-family: inherit;
+}
+
+/* Inline syntax highlight for diff viewer */
+.syntax-highlight-inline pre {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  display: inline;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+}
+
+.syntax-highlight-inline code {
+  font-family: inherit;
+  background: transparent !important;
+}
+
 /* Safe area handled by .aui-composer-footer wrapper */
 
 /* Thinking/reasoning block — assistant-ui renders these automatically */
@@ -219,6 +255,7 @@ html, body, #root {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  margin-top: 12px;
 }
 
 .tool-header {
@@ -232,7 +269,7 @@ html, body, #root {
 
 .tool-name {
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text-secondary);
   font-family: "SF Mono", "Fira Code", monospace;
 }
 
@@ -259,7 +296,7 @@ html, body, #root {
 
 /* Bash specific */
 .bash-command {
-  color: var(--success);
+  color: #86efac;
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -290,16 +327,24 @@ html, body, #root {
   overflow: auto;
 }
 
-/* react-diff-viewer-continued dark theme overrides for mobile */
-.diff-container table {
+/* react-diff-viewer-continued overrides — horizontal scroll + mobile sizing */
+.diff-container table,
+[class*="diff-container"] table {
   font-size: 11px !important;
+  table-layout: auto !important;
+  width: auto !important;
+  min-width: 100%;
 }
-.diff-container td {
+.diff-container td,
+[class*="diff-container"] td {
   padding: 0 4px !important;
+  white-space: pre !important;
 }
-.diff-container pre {
+.diff-container pre,
+[class*="diff-container"] pre {
   font-size: 11px !important;
   line-height: 1.3 !important;
+  white-space: pre !important;
 }
 
 /* Permission prompt */
@@ -728,6 +773,13 @@ html, body, #root {
 .git-file-a { color: var(--success); }
 .git-file-d { color: var(--danger); }
 .git-file-u { color: var(--danger); }
+
+.git-file-item {
+  transition: background 0.1s;
+}
+.git-file-item:active {
+  background: var(--bg-tertiary) !important;
+}
 
 /* Session start screen */
 .start-screen {
