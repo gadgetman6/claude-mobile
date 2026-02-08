@@ -140,6 +140,10 @@ export class AgentSession {
         resume: options.resume,
       });
 
+      // Small delay to let Bun's spawn() fully initialize the subprocess stdin pipe.
+      // Without this, the SDK's ProcessTransport may write before the pipe is writable.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const q = query({
         prompt: this.bridge[Symbol.asyncIterator]() as any,
         options,
