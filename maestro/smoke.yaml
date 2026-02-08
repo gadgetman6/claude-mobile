@@ -1,0 +1,30 @@
+appId: sohan.DEV-CLAUDE
+---
+# Phase 1: App launches to Server List (empty state)
+- launchApp
+- assertVisible: "Servers"
+- assertVisible: "No Servers"
+- assertVisible: "Add Server"
+
+# Phase 2: Add a server
+- tapOn: "Add Server"
+- assertVisible: "Add Server"
+- tapOn: "https://100.x.x.x:3333"
+- inputText: "http://localhost:3333"
+- tapOn: "My Desktop"
+- inputText: "Test Server"
+- tapOn: "Save"
+
+# Phase 3: Server appears in list
+- assertVisible: "Test Server"
+- assertVisible: "localhost:3333"
+
+# Phase 4: Tap server to navigate to Start Session screen
+- tapOn: "Test Server"
+- assertVisible: "Working Directory"
+- assertVisible: "Provider"
+- assertVisible: "New Session"
+
+# Phase 5: Fill in session details
+- tapOn: "/path/to/project"
+- inputText: "/tmp/test"

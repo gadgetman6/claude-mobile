@@ -1,0 +1,9 @@
+platform :ios, '18.0'
+
+install! 'cocoapods', :deterministic_uuids => false
+
+target 'DEV CLAUDE' do
+  # Socket.IO client for iOS (includes Engine.IO + WebSocket transport).
+  pod 'Socket.IO-Client-Swift', '~> 16.1'
+end
+
