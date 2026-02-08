@@ -169,7 +169,7 @@ cd "ios/DEV CLAUDE"
 # List connected devices to get the device ID
 xcrun xctrace list devices
 
-# Build for device (replace TEAM_ID with your Apple Developer Team ID)
+# Build for device (replace DEVICE_ID and TEAM_ID)
 xcodebuild \
   -workspace "DEV CLAUDE.xcworkspace" \
   -scheme "DEV CLAUDE" \
@@ -178,10 +178,18 @@ xcodebuild \
   -derivedDataPath ../build \
   DEVELOPMENT_TEAM=YOUR_TEAM_ID \
   CODE_SIGN_IDENTITY="Apple Development" \
+  -destination "id=YOUR_DEVICE_ID" \
   build
 
-# Install on device (requires ios-deploy: brew install ios-deploy)
-ios-deploy --bundle ../build/Build/Products/Debug-iphoneos/DEV\ CLAUDE.app
+# Install on device
+xcrun devicectl device install app \
+  --device YOUR_DEVICE_ID \
+  ../build/Build/Products/Debug-iphoneos/DEV\ CLAUDE.app
+
+# Launch the app
+xcrun devicectl device process launch \
+  --device YOUR_DEVICE_ID \
+  sohan.DEV-CLAUDE
 ```
 
 ### Connecting to the server from a physical device

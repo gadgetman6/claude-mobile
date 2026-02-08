@@ -275,8 +275,6 @@ final class SessionStore {
         case .result(let payload):
             isStreaming = false
             var parts: [String] = []
-            if let result = payload.result, !result.isEmpty { parts.append(result) }
-            if let cost = payload.totalCostUsd { parts.append(String(format: "Cost: $%.4f", cost)) }
             if let duration = payload.durationMs { parts.append(String(format: "Duration: %.1fs", Double(duration) / 1000)) }
             if let turns = payload.numTurns { parts.append("Turns: \(turns)") }
             if let errs = payload.errors, !errs.isEmpty { parts.append("Errors: \(errs.joined(separator: ", "))") }
