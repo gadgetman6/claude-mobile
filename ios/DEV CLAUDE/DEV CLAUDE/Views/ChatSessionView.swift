@@ -77,8 +77,6 @@ struct ChatSessionView: View {
             // Composer
             MessageComposerView()
         }
-        .animation(.easeInOut(duration: 0.2), value: sessionStore.connectionState.rawValue)
-        .animation(.easeInOut(duration: 0.2), value: sessionStore.error)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .sheet(isPresented: $showSettings) {

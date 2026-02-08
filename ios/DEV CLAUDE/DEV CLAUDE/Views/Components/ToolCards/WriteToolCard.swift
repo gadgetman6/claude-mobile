@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Specialized tool card for Write (file creation) operations with syntax highlighting.
+/// Specialized tool card for Write (file creation) operations with unified diff view.
 struct WriteToolCard: View {
     let toolCall: ToolCallPart
     @State private var isExpanded = false
+    @State private var showFullDiff = false
 
     private var filePath: String {
         toolCall.args["file_path"] as? String ?? toolCall.args["path"] as? String ?? ""
@@ -17,45 +18,65 @@ struct WriteToolCard: View {
         toolCall.args["content"] as? String ?? toolCall.args["contents"] as? String ?? ""
     }
 
-    private var language: String {
-        detectLanguage(from: filePath)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "doc.text")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
+            Button {
+                if !content.isEmpty { showFullDiff = true }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
 
-                Text(fileName)
-                    .font(.caption.bold())
-                    .lineLimit(1)
+                    Text(fileName)
+                        .font(.caption.bold())
+                        .lineLimit(1)
 
-                Text(filePath)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                    Text(filePath)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
 
-                Spacer()
+                    Spacer()
 
-                statusBadge
+                    if !content.isEmpty {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    statusBadge
+                }
             }
+            .buttonStyle(.plain)
 
             if !content.isEmpty {
                 DisclosureGroup(isExpanded: $isExpanded) {
-                    CodePreviewView(code: content, language: language, maxLines: 30)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        UnifiedDiffView(filePath: filePath, oldString: "", newString: content, maxLines: 30)
+                    }
                 } label: {
                     let lineCount = content.components(separatedBy: "\n").count
-                    Text("\(lineCount) lines")
+                    Text("+\(lineCount) lines")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.green)
                 }
             }
         }
         .padding(10)
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .fullScreenCover(isPresented: $showFullDiff) {
+            NavigationStack {
+                DiffDetailView(filePath: filePath, oldString: "", newString: content)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showFullDiff = false }
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
     @ViewBuilder

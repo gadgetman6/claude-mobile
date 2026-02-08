@@ -18,39 +18,39 @@ struct MessageComposerView: View {
                 attachmentPreview(imageData)
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
-                // Photo picker
+            // Full-width input with buttons inside
+            HStack(alignment: .bottom, spacing: 0) {
+                // Attachment button (inside, left)
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     Image(systemName: "paperclip")
-                        .font(.title3)
+                        .font(.system(size: 18))
                         .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 36)
                 }
                 .onChange(of: selectedPhoto) { _, newItem in
                     Task { await loadImage(from: newItem) }
                 }
+                .padding(.leading, 4)
 
-                // Text input (TextEditor for proper multiline support)
+                // Text input
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text("Send a message...")
                             .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 10)
                             .allowsHitTesting(false)
                     }
                     TextEditor(text: $text)
                         .scrollContentBackground(.hidden)
-                        .frame(minHeight: 44, maxHeight: 160)
+                        .frame(minHeight: 36, maxHeight: 160)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 2)
                         .focused($isFocused)
                         .accessibilityIdentifier("messageInput")
                 }
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 22))
 
-                // Send or Cancel button
+                // Send or Cancel button (inside, right)
                 if sessionStore.isStreaming {
                     Button {
                         sessionStore.interrupt()
@@ -58,10 +58,12 @@ struct MessageComposerView: View {
                         Image(systemName: "stop.fill")
                             .font(.caption)
                             .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 30, height: 30)
                             .background(.red)
                             .clipShape(Circle())
                     }
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 3)
                 } else {
                     Button {
                         send()
@@ -69,16 +71,20 @@ struct MessageComposerView: View {
                         Image(systemName: "arrow.up")
                             .font(.caption.bold())
                             .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(canSend ? Color.accentColor : Color.gray)
+                            .frame(width: 30, height: 30)
+                            .background(canSend ? Color.accentColor : Color.gray.opacity(0.4))
                             .clipShape(Circle())
                     }
                     .disabled(!canSend)
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 3)
                     .accessibilityIdentifier("sendButton")
                     .accessibilityLabel("Send")
                 }
             }
-            .padding(.horizontal, 12)
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .padding(.horizontal, 8)
             .padding(.vertical, 8)
         }
         .background(.bar)

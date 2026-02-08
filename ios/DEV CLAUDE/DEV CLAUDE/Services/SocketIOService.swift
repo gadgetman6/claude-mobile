@@ -64,6 +64,8 @@ final class SocketIOService {
         sock.on(clientEvent: .connect) { [weak self] _, _ in
             print("[socket] Connected")
             self?.updateState(.connected)
+            // Auto-reconnect to session after socket reconnects (e.g. returning from background)
+            self?.emitReconnectRequest()
         }
 
         sock.on(clientEvent: .disconnect) { [weak self] _, _ in

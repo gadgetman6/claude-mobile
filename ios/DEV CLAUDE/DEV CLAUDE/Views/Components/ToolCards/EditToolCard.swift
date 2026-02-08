@@ -101,21 +101,8 @@ struct EditToolCard: View {
     }
 
     private var diffPreview: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if !oldStr.isEmpty {
-                CodePreviewView(code: oldStr, language: language, maxLines: 10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                    )
-            }
-            if !newStr.isEmpty {
-                CodePreviewView(code: newStr, language: language, maxLines: 10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                    )
-            }
+        ScrollView(.horizontal, showsIndicators: false) {
+            UnifiedDiffView(filePath: filePath, oldString: oldStr, newString: newStr, maxLines: 20)
         }
     }
 

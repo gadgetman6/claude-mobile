@@ -6,6 +6,7 @@ struct DEV_CLAUDEApp: App {
     @State private var sessionStore = SessionStore()
     @State private var notificationManager = NotificationManager()
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,12 @@ struct DEV_CLAUDEApp: App {
                 appDelegate.notificationManager = notificationManager
                 // Request push permission
                 notificationManager.requestAuthorization()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                // Reconnect to session when app returns to foreground
+                sessionStore.reconnect()
             }
         }
     }

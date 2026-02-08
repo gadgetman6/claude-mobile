@@ -135,9 +135,11 @@ struct GitFileDiffView: View {
     let file: GitFile
     let serverManager: ServerManager
     @Environment(\.dismiss) private var dismiss
-    @State private var oldContent: String?
-    @State private var newContent: String?
+    @State private var diffLines: [DiffLine] = []
+    @State private var additions = 0
+    @State private var deletions = 0
     @State private var isLoading = true
+    @State private var errorMessage: String?
 
     private var fileName: String {
         URL(fileURLWithPath: file.path).lastPathComponent
@@ -148,14 +150,31 @@ struct GitFileDiffView: View {
             Group {
                 if isLoading {
                     ProgressView("Loading diff...")
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.title)
+                            .foregroundStyle(.secondary)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if diffLines.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.title)
+                            .foregroundStyle(.green)
+                        Text("No changes")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    DiffDetailView(
-                        filePath: file.path,
-                        oldString: oldContent ?? "",
-                        newString: newContent ?? ""
-                    )
+                    UnifiedDiffDetailView(filePath: file.path, lines: diffLines)
                 }
             }
+            .navigationTitle(fileName)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -170,27 +189,32 @@ struct GitFileDiffView: View {
 
     private func loadDiff() async {
         guard let base = serverManager.selectedServer?.baseURL else {
+            errorMessage = "No server connection"
             isLoading = false
             return
         }
         let fileEncoded = file.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let cwdEncoded = cwd.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         guard let url = URL(string: "\(base)/api/git-diff?cwd=\(cwdEncoded)&file=\(fileEncoded)") else {
+            errorMessage = "Invalid URL"
             isLoading = false
             return
         }
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                await MainActor.run {
-                    oldContent = json["oldContent"] as? String ?? ""
-                    newContent = json["newContent"] as? String ?? ""
-                    isLoading = false
-                }
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let unifiedDiff = json["unifiedDiff"] as? String, !unifiedDiff.isEmpty {
+                let parsed = parseUnifiedDiff(unifiedDiff)
+                diffLines = parsed.lines
+                additions = parsed.additions
+                deletions = parsed.deletions
+            } else {
+                errorMessage = "No diff available"
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            errorMessage = error.localizedDescription
         }
+        isLoading = false
     }
 }

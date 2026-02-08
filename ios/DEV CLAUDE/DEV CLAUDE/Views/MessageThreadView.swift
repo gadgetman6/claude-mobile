@@ -8,52 +8,53 @@ struct MessageThreadView: View {
     private let pageSize = 40
 
     @State private var visibleCount = 40
-    @State private var isNearBottom = true
+    /// When true, new messages auto-scroll to bottom. Disabled when user scrolls up.
+    @State private var autoScroll = true
 
     private var hasMore: Bool {
         sessionStore.messages.count > visibleCount
     }
 
     var body: some View {
-        GeometryReader { geo in
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(spacing: 4) {
-                        if sessionStore.messages.isEmpty {
-                            welcomeView
-                        } else {
-                            if hasMore {
-                                loadMoreButton
-                            }
-
-                            ForEach(sessionStore.messages.suffix(visibleCount)) { message in
-                                MessageCell(message: message)
-                            }
+                LazyVStack(spacing: 4) {
+                    if sessionStore.messages.isEmpty {
+                        welcomeView
+                    } else {
+                        if hasMore {
+                            loadMoreButton
                         }
 
-                        // Bottom anchor
-                        Color.clear
-                            .frame(height: 1)
-                            .id("bottom")
-                            .onAppear { isNearBottom = true }
-                            .onDisappear { isNearBottom = false }
+                        ForEach(sessionStore.messages.suffix(visibleCount)) { message in
+                            MessageCell(message: message)
+                        }
                     }
-                    .frame(width: geo.size.width)
-                    .clipped()
+
+                    // Bottom anchor
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottom")
                 }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onScrollPhaseChange { _, newPhase in
+                if newPhase == .interacting {
+                    autoScroll = false
+                }
+            }
             .onChange(of: sessionStore.messages.count) { oldCount, newCount in
                 guard newCount > 0 else { return }
                 let delta = newCount - oldCount
 
                 if delta > pageSize || oldCount == 0 {
                     visibleCount = min(pageSize, newCount)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    }
-                } else if delta > 0 && isNearBottom {
+                    autoScroll = true
+                    scrollToBottom(proxy: proxy, delay: 0.15)
+                } else if delta > 0 {
                     visibleCount = max(visibleCount, newCount)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        proxy.scrollTo("bottom", anchor: .bottom)
+                    if autoScroll {
+                        scrollToBottom(proxy: proxy, delay: 0.05)
                     }
                 } else if delta < 0 {
                     visibleCount = pageSize
@@ -63,7 +64,16 @@ struct MessageThreadView: View {
                 scrollToBottomButton(proxy: proxy)
             }
         }
-        } // GeometryReader
+    }
+
+    // MARK: - Helpers
+
+    private func scrollToBottom(proxy: ScrollViewProxy, delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.easeOut(duration: 0.15)) {
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+        }
     }
 
     // MARK: - Subviews
@@ -85,10 +95,8 @@ struct MessageThreadView: View {
 
     private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
         Button {
-            isNearBottom = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
+            autoScroll = true
+            scrollToBottom(proxy: proxy, delay: 0.05)
         } label: {
             Image(systemName: "chevron.down")
                 .font(.body.bold())
@@ -99,10 +107,10 @@ struct MessageThreadView: View {
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
         .padding(.bottom, 8)
-        .opacity(isNearBottom ? 0 : 1)
-        .scaleEffect(isNearBottom ? 0.5 : 1)
-        .animation(.easeInOut(duration: 0.2), value: isNearBottom)
-        .allowsHitTesting(!isNearBottom)
+        .opacity(autoScroll ? 0 : 1)
+        .scaleEffect(autoScroll ? 0.5 : 1)
+        .animation(.easeInOut(duration: 0.2), value: autoScroll)
+        .allowsHitTesting(!autoScroll)
     }
 
     private var welcomeView: some View {

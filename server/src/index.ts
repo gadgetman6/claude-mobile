@@ -48,17 +48,30 @@ app.get("/api/git-diff", async (c) => {
   const file = c.req.query("file");
   if (!file) return c.json({ error: "No file" }, 400);
   try {
-    // Get the original (HEAD) version
-    let oldContent = "";
+    // Get unified diff from git (staged + unstaged)
+    let unifiedDiff = "";
     try {
-      const { stdout } = await execFileAsync("git", ["-C", cwd, "show", `HEAD:${file}`], { timeout: 5000 });
-      oldContent = stdout;
+      const { stdout } = await execFileAsync("git", ["-C", cwd, "diff", "-U999999", "HEAD", "--", file], { timeout: 5000 });
+      unifiedDiff = stdout;
     } catch {}
-    // Get the working version
-    const filePath = file.startsWith("/") ? file : `${cwd}/${file}`;
-    let newContent = "";
-    try { newContent = await readFile(filePath, "utf-8"); } catch {}
-    return c.json({ oldContent, newContent, filePath });
+    // If no diff against HEAD, try unstaged only (for untracked files, show full content as added)
+    if (!unifiedDiff) {
+      try {
+        const { stdout } = await execFileAsync("git", ["-C", cwd, "diff", "-U999999", "--", file], { timeout: 5000 });
+        unifiedDiff = stdout;
+      } catch {}
+    }
+    // For untracked files, generate a pseudo-diff
+    if (!unifiedDiff) {
+      const filePath = file.startsWith("/") ? file : `${cwd}/${file}`;
+      try {
+        const content = await readFile(filePath, "utf-8");
+        const lines = content.split("\n");
+        unifiedDiff = `--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lines.length} @@\n` +
+          lines.map(l => `+${l}`).join("\n");
+      } catch {}
+    }
+    return c.json({ unifiedDiff, filePath: file });
   } catch {
     return c.json({ error: "Failed to get diff" }, 500);
   }
