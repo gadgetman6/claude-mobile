@@ -393,6 +393,111 @@ function sendToClient(msg: ServerMessage) {
   io.to("session").emit("message", msg);
 }
 
+// Parse Codex JSONL session into display history
+async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
+  const homeDir = process.env.HOME ?? "/home/debian";
+  const sessionsDir = `${homeDir}/.codex/sessions`;
+  const { readdir, readFile } = await import("fs/promises");
+  const { join } = await import("path");
+
+  // Find the JSONL file matching this session ID
+  const years = await readdir(sessionsDir).catch(() => [] as string[]);
+  for (const year of years.reverse()) {
+    const months = await readdir(join(sessionsDir, year)).catch(() => [] as string[]);
+    for (const month of months.reverse()) {
+      const days = await readdir(join(sessionsDir, year, month)).catch(() => [] as string[]);
+      for (const day of days.reverse()) {
+        const dayDir = join(sessionsDir, year, month, day);
+        const files = await readdir(dayDir).catch(() => [] as string[]);
+        const match = files.find(f => f.includes(sessionId));
+        if (!match) continue;
+
+        const content = await readFile(join(dayDir, match), "utf-8");
+        const history: HistoryEntry[] = [];
+        const pendingCalls = new Map<string, { histIdx: number; partIdx: number }>();
+
+        for (const line of content.split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type !== "response_item") continue;
+            const p = parsed.payload;
+            if (!p) continue;
+
+            // User messages
+            if (p.role === "user") {
+              const textParts = (p.content ?? [])
+                .filter((c: any) => c.type === "input_text" && c.text?.length < 500 && !c.text?.startsWith("<") && !c.text?.startsWith("#"))
+                .map((c: any) => c.text);
+              if (textParts.length > 0) {
+                history.push({ role: "user", content: textParts.join("\n") });
+              }
+            }
+            // Assistant text messages
+            else if (p.role === "assistant") {
+              const text = (p.content ?? [])
+                .filter((c: any) => c.type === "output_text")
+                .map((c: any) => c.text)
+                .join("\n");
+              if (text) {
+                history.push({ role: "assistant", content: [{ type: "text", text }] });
+              }
+            }
+            // Reasoning
+            else if (p.type === "reasoning") {
+              const raw = p.summary ?? p.content ?? "";
+              const text = Array.isArray(raw)
+                ? raw.filter((s: any) => s.type === "summary_text").map((s: any) => s.text).join("\n")
+                : typeof raw === "string" ? raw : "";
+              if (text) {
+                const last = history[history.length - 1];
+                if (last?.role === "assistant") {
+                  last.content.push({ type: "reasoning", text });
+                } else {
+                  history.push({ role: "assistant", content: [{ type: "reasoning", text }] });
+                }
+              }
+            }
+            // Function calls (tool use)
+            else if (p.type === "function_call") {
+              let args: Record<string, unknown> = {};
+              try { args = typeof p.arguments === "string" ? JSON.parse(p.arguments) : (p.arguments ?? {}); } catch { args = { command: p.arguments }; }
+              const toolName = p.name === "exec_command" ? "Bash" : (p.name ?? "tool");
+              const toolCallId = p.call_id ?? p.id ?? "";
+              const part: HistoryContentPart = { type: "tool-call", toolCallId, toolName, args };
+              const last = history[history.length - 1];
+              if (last?.role === "assistant") {
+                pendingCalls.set(toolCallId, { histIdx: history.length - 1, partIdx: last.content.length });
+                last.content.push(part);
+              } else {
+                pendingCalls.set(toolCallId, { histIdx: history.length, partIdx: 0 });
+                history.push({ role: "assistant", content: [part] });
+              }
+            }
+            // Function call output (tool result)
+            else if (p.type === "function_call_output") {
+              const callId = p.call_id ?? "";
+              const pending = pendingCalls.get(callId);
+              if (pending) {
+                const entry = history[pending.histIdx];
+                if (entry?.role === "assistant") {
+                  const part = entry.content[pending.partIdx];
+                  if (part?.type === "tool-call") {
+                    part.result = p.output ?? "";
+                  }
+                }
+                pendingCalls.delete(callId);
+              }
+            }
+          } catch { continue; }
+        }
+        return history;
+      }
+    }
+  }
+  return [];
+}
+
 // Convert parsed transcript to display history
 function transcriptToHistory(transcript: { messages: any[] }): HistoryEntry[] {
   const history: HistoryEntry[] = [];
@@ -533,6 +638,17 @@ io.on("connection", (socket) => {
       }
 
       if (provider === "codex") {
+        // Load Codex conversation history when resuming
+        if (data.resume) {
+          try {
+            const history = await loadCodexHistory(data.resume);
+            if (history.length > 0) {
+              socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+            }
+          } catch (err) {
+            console.error("[socket.io] Failed to load Codex history:", err);
+          }
+        }
         currentSession = new CodexSession(sendToClient);
         await (currentSession as CodexSession).start({
           cwd: data.cwd,
