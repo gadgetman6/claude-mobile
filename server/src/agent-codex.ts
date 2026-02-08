@@ -38,7 +38,13 @@ export class CodexSession {
 
   constructor(send: SendFn) {
     this.send = send;
-    this.codex = new Codex();
+    // Ensure Codex emits reasoning items so we can render them as "thinking" blocks in the UI.
+    // See @openai/codex-sdk README: `show_raw_agent_reasoning`.
+    this.codex = new Codex({
+      config: {
+        show_raw_agent_reasoning: true,
+      },
+    });
   }
 
   async start(config: CodexSessionConfig) {
