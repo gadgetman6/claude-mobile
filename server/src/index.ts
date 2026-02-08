@@ -463,6 +463,10 @@ async function loadCodexHistory(sessionId: string): Promise<HistoryEntry[]> {
               let args: Record<string, unknown> = {};
               try { args = typeof p.arguments === "string" ? JSON.parse(p.arguments) : (p.arguments ?? {}); } catch { args = { command: p.arguments }; }
               const toolName = p.name === "exec_command" ? "Bash" : (p.name ?? "tool");
+              // Map Codex exec_command {cmd} to Bash tool UI {command}
+              if (toolName === "Bash" && args.cmd && !args.command) {
+                args.command = args.cmd;
+              }
               const toolCallId = p.call_id ?? p.id ?? "";
               const part: HistoryContentPart = { type: "tool-call", toolCallId, toolName, args };
               const last = history[history.length - 1];

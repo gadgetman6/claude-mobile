@@ -1,4 +1,8 @@
-import type { PermissionMode, ModelInfo, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionMode, ModelInfo } from "@anthropic-ai/claude-agent-sdk";
+
+// Socket.IO payloads include Claude SDK messages and Codex-mapped messages.
+// We intentionally keep this loose so multiple providers can share the same UI.
+export type SDKMessage = unknown;
 
 // Server → Client messages
 export type ServerMessage =
