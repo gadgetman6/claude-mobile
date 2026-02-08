@@ -47,11 +47,7 @@
   --safe-top: env(safe-area-inset-top, 0px);
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* Tailwind v4 preflight handles box-sizing/margin/padding reset */
 
 html, body, #root {
   height: 100%;
@@ -173,27 +169,7 @@ html, body, #root {
   max-width: 100% !important;
 }
 
-/* Message spacing */
-.aui-thread-viewport {
-  gap: 16px !important;
-  padding: 16px !important;
-}
-
-/* User message bubble padding */
-.aui-user-message-content {
-  padding: 10px 14px;
-}
-
-/* Assistant message padding */
-.aui-assistant-message-content {
-  padding: 4px 0;
-  line-height: 1.6;
-}
-
-/* Safe area for composer on notched phones */
-.aui-thread-root .aui-composer-root {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
+/* Safe area handled by .aui-composer-footer wrapper */
 
 /* Thinking/reasoning block — assistant-ui renders these automatically */
 .thinking-block {

@@ -50,6 +50,11 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+// Skip waiting so new SW activates immediately on update
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
 // Activate immediately (don't wait for old SW to die)
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
