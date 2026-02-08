@@ -94,6 +94,7 @@ type StreamBlock =
 const emptyUsage: TokenUsage = {
   inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
   cacheCreationTokens: 0, costUsd: 0, contextWindow: 0, maxOutputTokens: 0,
+  currentContextTokens: 0,
 };
 
 // --- Hook ---

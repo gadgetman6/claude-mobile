@@ -7,32 +7,24 @@ function formatNum(n: number): string {
 }
 
 export function TokenUsageBar({ usage }: { usage: TokenUsage }) {
-  const totalTokens = usage.inputTokens + usage.outputTokens;
   const contextPct =
-    usage.contextWindow > 0
-      ? Math.round((totalTokens / usage.contextWindow) * 100)
+    usage.contextWindow > 0 && usage.currentContextTokens > 0
+      ? Math.round((usage.currentContextTokens / usage.contextWindow) * 100)
       : 0;
 
   return (
     <div className="usage-bar">
-      <div className="usage-item">
-        <span className="usage-label">In:</span>
-        <span className="usage-value">{formatNum(usage.inputTokens)}</span>
-      </div>
-      <div className="usage-item">
-        <span className="usage-label">Out:</span>
-        <span className="usage-value">{formatNum(usage.outputTokens)}</span>
-      </div>
-      {usage.cacheReadTokens > 0 && (
-        <div className="usage-item">
-          <span className="usage-label">Cache:</span>
-          <span className="usage-value">{formatNum(usage.cacheReadTokens)}</span>
-        </div>
-      )}
-      {usage.contextWindow > 0 && (
+      {usage.currentContextTokens > 0 && (
         <div className="usage-item">
           <span className="usage-label">Ctx:</span>
-          <span className="usage-value">{contextPct}%</span>
+          <span className="usage-value">{formatNum(usage.currentContextTokens)}</span>
+        </div>
+      )}
+      {contextPct > 0 && (
+        <div className="usage-item">
+          <span className="usage-value" style={{ color: contextPct > 80 ? "var(--danger)" : contextPct > 50 ? "var(--warning)" : undefined }}>
+            {contextPct}%
+          </span>
         </div>
       )}
       {usage.costUsd > 0 && (

@@ -84,6 +84,7 @@ export class AgentSession {
     costUsd: 0,
     contextWindow: 0,
     maxOutputTokens: 0,
+    currentContextTokens: 0,
   };
 
   constructor(send: SendFn) {
@@ -237,6 +238,9 @@ export class AgentSession {
       this.usage.outputTokens += u.output_tokens ?? 0;
       this.usage.cacheReadTokens += u.cache_read_input_tokens ?? 0;
       this.usage.cacheCreationTokens += u.cache_creation_input_tokens ?? 0;
+      // Current context = this turn's input + cache tokens
+      this.usage.currentContextTokens =
+        (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
       this.sendUsage();
     }
 

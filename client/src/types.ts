@@ -16,6 +16,7 @@ export type TokenUsage = {
   costUsd: number;
   contextWindow: number;
   maxOutputTokens: number;
+  currentContextTokens: number;
 };
 
 export type ModelInfo = {
