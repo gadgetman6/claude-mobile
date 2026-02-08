@@ -1,5 +1,5 @@
 // Mirrors server/src/types.ts but without SDK dependency
-// We receive these as JSON over WebSocket
+// We receive these as JSON over Socket.IO
 
 export type PermissionMode =
   | "default"
@@ -175,7 +175,7 @@ export type ContentDelta =
   | { type: "thinking_delta"; thinking: string }
   | { type: "input_json_delta"; partial_json: string };
 
-// Server messages
+// Server messages (Socket.IO "message" event payload)
 export type ServerMessage =
   | { type: "sdk_message"; message: SDKMessage }
   | {
@@ -192,9 +192,8 @@ export type ServerMessage =
   | { type: "error"; message: string }
   | { type: "session_started"; sessionId: string }
   | { type: "session_ended"; reason: string }
-  | { type: "session_history"; messages: Array<any> }
   | { type: "session_state"; sessionId: string; cwd: string; model: string; permissionMode: string; isStreaming: boolean }
-  | { type: "ping" };
+  | { type: "session_history"; messages: Array<any> };
 
 // Permission request for display
 export type PermissionRequest = {
@@ -204,29 +203,3 @@ export type PermissionRequest = {
   description?: string;
   decisionReason?: string;
 };
-
-// Accumulated assistant message for rendering
-export type AccumulatedMessage =
-  | { role: "user"; content: string }
-  | {
-      role: "assistant";
-      uuid: string;
-      blocks: AccumulatedBlock[];
-      isStreaming: boolean;
-    }
-  | { role: "result"; result?: string; cost?: number; duration?: number; turns?: number; errors?: string[] }
-  | { role: "system"; text: string };
-
-export type AccumulatedBlock =
-  | { type: "text"; text: string }
-  | { type: "thinking"; thinking: string; isOpen: boolean }
-  | {
-      type: "tool_use";
-      id: string;
-      name: string;
-      input: Record<string, unknown>;
-      inputJson: string;
-      result?: string;
-      isRunning: boolean;
-      nestedBlocks?: AccumulatedBlock[];
-    };

@@ -1,16 +1,15 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { serveStatic } from "hono/bun";
-import { createBunWebSocket } from "hono/bun";
+import { Server } from "socket.io";
+import { Server as Engine } from "@socket.io/bun-engine";
 import { AgentSession } from "./agent.js";
 import { getGitStatus } from "./git.js";
 import { getVapidPublicKey, setSubscription, removeSubscription, sendPushNotification } from "./push.js";
-import type { ClientMessage, ServerMessage, HistoryMessage, HistoryBlock } from "./types.js";
+import type { ServerMessage, HistoryEntry, HistoryContentPart } from "./types.js";
+import { parseTranscript } from "@constellos/claude-code-kit/transcripts";
 
 const PORT = parseInt(process.env.PORT ?? "3333");
 const HOST = process.env.HOST ?? "0.0.0.0";
-
-const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 const app = new Hono();
 
@@ -28,7 +27,6 @@ app.get("/api/git-status", async (c) => {
 app.get("/api/sessions", async (c) => {
   const cwd = c.req.query("cwd") ?? "/home/debian";
   const homeDir = process.env.HOME ?? "/home/debian";
-  // Claude stores sessions keyed by path with / replaced by -
   const projectKey = cwd.replace(/\//g, "-");
   const sessionsDir = `${homeDir}/.claude/projects/${projectKey}`;
 
@@ -51,7 +49,6 @@ app.get("/api/sessions", async (c) => {
         const filePath = `${sessionsDir}/${file}`;
         const fileStat = await stat(filePath);
         const content = await readFile(filePath, "utf-8");
-        // Find first user message line
         const lines = content.split("\n");
         let firstMessage = "";
         let timestamp = fileStat.mtime.toISOString();
@@ -80,7 +77,6 @@ app.get("/api/sessions", async (c) => {
       } catch { continue; }
     }
 
-    // Sort by timestamp descending
     sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return c.json(sessions.slice(0, 10));
   } catch {
@@ -110,313 +106,9 @@ app.post("/api/push/unsubscribe", async (c) => {
   return c.json({ ok: true });
 });
 
-// Load message history from a session jsonl file
-async function loadSessionHistory(cwd: string, sessionId: string): Promise<HistoryMessage[]> {
-  const { readFile } = await import("fs/promises");
-  const homeDir = process.env.HOME ?? "/home/debian";
-  const projectKey = cwd.replace(/\//g, "-");
-  const filePath = `${homeDir}/.claude/projects/${projectKey}/${sessionId}.jsonl`;
-
-  try {
-    const content = await readFile(filePath, "utf-8");
-    const messages: HistoryMessage[] = [];
-    // Map tool_use_id → index in the last assistant message blocks, for attaching results
-    const pendingToolUses = new Map<string, { msgIdx: number; blockIdx: number }>();
-
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const parsed = JSON.parse(line);
-
-        if (parsed.type === "user" && parsed.message?.content) {
-          const c = parsed.message.content;
-          if (typeof c === "string") {
-            messages.push({ role: "user", content: c });
-          } else if (Array.isArray(c)) {
-            // Extract real user text
-            const textParts = c.filter((b: any) => b.type === "text").map((b: any) => b.text);
-            if (textParts.length > 0) {
-              messages.push({ role: "user", content: textParts.join("\n") });
-            }
-            // Attach tool results to their corresponding tool_use blocks
-            for (const b of c) {
-              if (b.type === "tool_result" && b.tool_use_id) {
-                const pending = pendingToolUses.get(b.tool_use_id);
-                if (pending) {
-                  const msg = messages[pending.msgIdx];
-                  if (msg.role === "assistant") {
-                    const block = msg.blocks[pending.blockIdx];
-                    if (block.type === "tool_use") {
-                      const rc = b.content;
-                      block.result = typeof rc === "string"
-                        ? rc
-                        : Array.isArray(rc)
-                          ? rc.filter((r: any) => r.type === "text").map((r: any) => r.text).join("\n")
-                          : "";
-                    }
-                  }
-                  pendingToolUses.delete(b.tool_use_id);
-                }
-              }
-            }
-          }
-        } else if (parsed.type === "assistant" && parsed.message?.content) {
-          const rawBlocks = parsed.message.content;
-          if (!Array.isArray(rawBlocks)) continue;
-
-          const blocks: HistoryBlock[] = [];
-          const msgIdx = messages.length;
-
-          for (const b of rawBlocks) {
-            if (b.type === "text" && b.text?.trim()) {
-              blocks.push({ type: "text", text: b.text });
-            } else if (b.type === "thinking" && b.thinking) {
-              blocks.push({ type: "thinking", thinking: b.thinking });
-            } else if (b.type === "tool_use") {
-              const blockIdx = blocks.length;
-              blocks.push({
-                type: "tool_use",
-                name: b.name ?? "",
-                input: b.input ?? {},
-              });
-              if (b.id) {
-                pendingToolUses.set(b.id, { msgIdx, blockIdx });
-              }
-            }
-          }
-
-          if (blocks.length > 0) {
-            // Merge with previous assistant message if consecutive
-            const lastMsg = messages[messages.length - 1];
-            if (lastMsg && lastMsg.role === "assistant") {
-              lastMsg.blocks.push(...blocks);
-            } else {
-              messages.push({ role: "assistant", blocks });
-            }
-          }
-        }
-      } catch { continue; }
-    }
-
-    return messages;
-  } catch {
-    return [];
-  }
-}
-
-// Global session state — survives WS reconnects (single-user app)
-let currentSession: AgentSession | null = null;
-let currentSessionId: string | null = null;
-let currentCwd: string | null = null;
-let currentModel: string = "";
-let currentPermissionMode: string = "default";
-let currentWs: any = null;
-let pingInterval: ReturnType<typeof setInterval> | null = null;
-
-function sendToClient(msg: ServerMessage) {
-  // Track session metadata from SDK messages
-  if (msg.type === "sdk_message") {
-    const sdkMsg = msg.message as any;
-    if (sdkMsg?.type === "system" && sdkMsg?.subtype === "init") {
-      currentSessionId = sdkMsg.session_id ?? currentSessionId;
-      currentModel = sdkMsg.model ?? currentModel;
-      currentPermissionMode = sdkMsg.permissionMode ?? currentPermissionMode;
-    }
-  }
-  if (msg.type === "session_started") {
-    currentSessionId = (msg as any).sessionId;
-  }
-
-  // Send push notification for permission requests
-  if (msg.type === "permission_request") {
-    const toolName = (msg as any).toolName ?? "tool";
-    sendPushNotification(
-      "Claude needs your input",
-      `Permission requested for: ${toolName}`,
-      { type: "permission_request", toolName }
-    );
-  }
-
-  try {
-    currentWs?.send(JSON.stringify(msg));
-  } catch {
-    // WS not connected — message is lost but session continues
-  }
-}
-
-// WebSocket endpoint
-app.get(
-  "/ws",
-  upgradeWebSocket(() => {
-    return {
-      onOpen(_event, wsInstance) {
-        currentWs = wsInstance;
-        console.log("Client connected");
-
-        // Keepalive ping every 20s to prevent proxy timeout
-        if (pingInterval) clearInterval(pingInterval);
-        pingInterval = setInterval(() => {
-          try {
-            currentWs?.send(JSON.stringify({ type: "ping" }));
-          } catch { /* ignore */ }
-        }, 20_000);
-      },
-
-      async onMessage(event) {
-        try {
-          const data: ClientMessage = JSON.parse(
-            typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data as ArrayBuffer)
-          );
-          console.log("[ws] Received:", data.type);
-
-          switch (data.type) {
-            case "reconnect": {
-              // Client reconnected — replay session state if active
-              if (currentSessionId && currentCwd) {
-                console.log("[ws] Reconnecting to session:", currentSessionId);
-                const history = await loadSessionHistory(currentCwd, currentSessionId);
-                if (history.length > 0) {
-                  sendToClient({ type: "session_history", messages: history });
-                }
-                sendToClient({
-                  type: "session_state",
-                  sessionId: currentSessionId,
-                  cwd: currentCwd,
-                  model: currentModel,
-                  permissionMode: currentPermissionMode,
-                  isStreaming: currentSession?.isRunning ?? false,
-                });
-              } else {
-                // No active session — tell client to go back to start
-                sendToClient({ type: "session_ended", reason: "No active session" });
-              }
-              break;
-            }
-
-            case "start_session": {
-              console.log("[ws] Starting session:", data.cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
-              currentCwd = data.cwd;
-              if (currentSession) {
-                currentSession.close();
-                currentSession = null;
-              }
-
-              // If resuming, load and send the session history first
-              if (data.resume) {
-                const history = await loadSessionHistory(data.cwd, data.resume);
-                console.log("[ws] Loaded session history:", history.length, "messages");
-                if (history.length > 0) {
-                  sendToClient({ type: "session_history", messages: history });
-                }
-              }
-
-              currentSession = new AgentSession(sendToClient);
-              await currentSession.start({
-                cwd: data.cwd,
-                model: data.model,
-                permissionMode: data.permissionMode,
-                enable1mContext: data.enable1mContext,
-                resume: data.resume,
-              });
-              break;
-            }
-
-            case "user_message": {
-              if (!currentSession) {
-                sendToClient({ type: "error", message: "No active session. Start a session first." });
-                return;
-              }
-              currentSession.sendUserMessage(data.content);
-              break;
-            }
-
-            case "permission_response": {
-              currentSession?.resolvePermission(
-                data.toolUseId,
-                data.allow,
-                data.updatedInput,
-                data.denyMessage
-              );
-              break;
-            }
-
-            case "ask_question_response": {
-              currentSession?.resolveAskQuestion(
-                data.toolUseId,
-                data.questions,
-                data.answers
-              );
-              break;
-            }
-
-            case "interrupt": {
-              await currentSession?.interrupt();
-              break;
-            }
-
-            case "set_model": {
-              await currentSession?.setModel(data.model);
-              break;
-            }
-
-            case "set_permission_mode": {
-              await currentSession?.setPermissionMode(data.mode);
-              break;
-            }
-
-            case "set_thinking_tokens": {
-              await currentSession?.setMaxThinkingTokens(data.tokens);
-              break;
-            }
-
-            case "set_1m_context": {
-              sendToClient({
-                type: "error",
-                message: "Changing 1M context mode requires starting a new session.",
-              });
-              break;
-            }
-
-            case "get_models": {
-              if (currentSession) {
-                const models = await currentSession.getModels();
-                sendToClient({ type: "models", models });
-              }
-              break;
-            }
-
-            case "get_git_status": {
-              const cwd = data.cwd ?? process.cwd();
-              const result = await getGitStatus(cwd);
-              sendToClient({ type: "git_status", ...result });
-              break;
-            }
-          }
-        } catch (err) {
-          console.error("WS message error:", err);
-          sendToClient({
-            type: "error",
-            message: err instanceof Error ? err.message : String(err),
-          });
-        }
-      },
-
-      onClose() {
-        console.log("Client disconnected (session kept alive)");
-        // DON'T close the session — it survives reconnects
-      },
-
-      onError(error) {
-        console.error("WS error:", error);
-      },
-    };
-  })
-);
-
 // Serve built client in production
 const clientDist = `${import.meta.dir}/../../client/dist`;
 app.get("/*", async (c, next) => {
-  // Try to serve static file first
   const path = new URL(c.req.url).pathname;
   const filePath = path === "/" ? "/index.html" : path;
   const file = Bun.file(clientDist + filePath);
@@ -434,13 +126,11 @@ app.get("/*", async (c, next) => {
     const headers: Record<string, string> = {
       "Content-Type": mimeTypes[ext] ?? "application/octet-stream",
     };
-    // Don't cache HTML/SW so refreshes pick up new deploys
     if (ext === "html" || filePath.includes("sw.js") || filePath.includes("registerSW")) {
       headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
     }
     return new Response(file, { headers });
   }
-  // SPA fallback: serve index.html for all other routes
   const index = Bun.file(clientDist + "/index.html");
   if (await index.exists()) {
     return new Response(index, {
@@ -450,7 +140,314 @@ app.get("/*", async (c, next) => {
   return next();
 });
 
-// TLS config: use certs if available for HTTPS (needed for PWA over Tailscale)
+// Global session state — survives reconnects (single-user app)
+let currentSession: AgentSession | null = null;
+let currentSessionId: string | null = null;
+let currentCwd: string | null = null;
+let currentModel: string = "";
+let currentPermissionMode: string = "default";
+let messageCache: ServerMessage[] = [];
+let lastAssistantText: string = "";
+
+// Socket.IO setup
+const io = new Server();
+const engine = new Engine({
+  cors: { origin: "*" },
+});
+io.bind(engine);
+
+function sendToClient(msg: ServerMessage) {
+  // Track session metadata from SDK messages
+  if (msg.type === "sdk_message") {
+    const sdkMsg = msg.message as any;
+    if (sdkMsg?.type === "system" && sdkMsg?.subtype === "init") {
+      currentSessionId = sdkMsg.session_id ?? currentSessionId;
+      currentModel = sdkMsg.model ?? currentModel;
+      currentPermissionMode = sdkMsg.permissionMode ?? currentPermissionMode;
+    }
+  }
+  if (msg.type === "session_started") {
+    currentSessionId = (msg as any).sessionId;
+  }
+
+  // Send push notifications
+  if (msg.type === "permission_request") {
+    const toolName = (msg as any).toolName ?? "tool";
+    const dir = currentCwd?.split("/").pop() ?? "";
+    sendPushNotification(
+      dir ? `Claude · ${dir}` : "Claude needs your input",
+      `Permission: ${toolName}`,
+      { type: "permission_request", toolName }
+    );
+  }
+
+  if (msg.type === "sdk_message") {
+    const sdkMsg = msg.message as any;
+    // Track last assistant text for notifications
+    if (sdkMsg?.type === "assistant" && !sdkMsg.parent_tool_use_id) {
+      const blocks = sdkMsg.message?.content;
+      if (Array.isArray(blocks)) {
+        const text = blocks
+          .filter((b: any) => b.type === "text" && b.text)
+          .map((b: any) => b.text)
+          .join(" ");
+        if (text) lastAssistantText = text;
+      }
+    }
+    if (sdkMsg?.type === "result") {
+      const dir = currentCwd?.split("/").pop() ?? currentCwd ?? "";
+      const preview = lastAssistantText
+        ? lastAssistantText.length > 120 ? lastAssistantText.slice(0, 120) + "..." : lastAssistantText
+        : "Task finished";
+      const cost = sdkMsg.total_cost_usd;
+      const meta = [
+        dir,
+        cost ? `$${cost.toFixed(4)}` : null,
+      ].filter(Boolean).join(" · ");
+      sendPushNotification(
+        meta ? `Claude · ${meta}` : "Claude finished",
+        preview,
+        { type: "result" }
+      );
+      lastAssistantText = "";
+    }
+  }
+
+  // Push to cache (kept for potential future use)
+  messageCache.push(msg);
+
+  // Emit via Socket.IO to all connected clients in the session room
+  io.to("session").emit("message", msg);
+}
+
+// Convert parsed transcript to display history
+function transcriptToHistory(transcript: { messages: any[] }): HistoryEntry[] {
+  const history: HistoryEntry[] = [];
+  const pendingTools = new Map<string, { histIdx: number; partIdx: number }>();
+
+  for (const msg of transcript.messages) {
+    if (msg.type === "user") {
+      // Skip internal tool-result user messages (they have parent_tool_use_id)
+      if (msg.parentUuid && msg.message?.content && Array.isArray(msg.message.content)) {
+        // Attach tool results to pending tool calls
+        for (const block of msg.message.content) {
+          if (block.tool_use_id) {
+            const pending = pendingTools.get(block.tool_use_id);
+            if (pending) {
+              const entry = history[pending.histIdx];
+              if (entry.role === "assistant") {
+                const part = entry.content[pending.partIdx];
+                if (part.type === "tool-call") {
+                  const rc = block.content;
+                  part.result = typeof rc === "string" ? rc
+                    : Array.isArray(rc) ? rc.filter((r: any) => r.type === "text").map((r: any) => r.text).join("\n")
+                    : "";
+                }
+              }
+              pendingTools.delete(block.tool_use_id);
+            }
+          }
+        }
+        continue;
+      }
+      const raw = msg.message?.content;
+      const text = typeof raw === "string" ? raw
+        : Array.isArray(raw) ? raw.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n")
+        : "";
+      if (text) history.push({ role: "user", content: text });
+    } else if (msg.type === "assistant") {
+      const rawBlocks = msg.message?.content;
+      if (!Array.isArray(rawBlocks)) continue;
+      const parts: HistoryContentPart[] = [];
+      const histIdx = history.length;
+      for (const b of rawBlocks) {
+        if (b.type === "text" && b.text?.trim()) {
+          parts.push({ type: "text", text: b.text });
+        } else if (b.type === "thinking" && b.thinking) {
+          parts.push({ type: "reasoning", text: b.thinking });
+        } else if (b.type === "tool_use") {
+          const partIdx = parts.length;
+          parts.push({ type: "tool-call", toolCallId: b.id ?? "", toolName: b.name ?? "", args: b.input ?? {} });
+          if (b.id) pendingTools.set(b.id, { histIdx, partIdx });
+        }
+      }
+      if (parts.length > 0) {
+        // Merge consecutive assistant messages
+        const last = history[history.length - 1];
+        if (last?.role === "assistant") {
+          const offset = last.content.length;
+          for (const [id, ref] of pendingTools) {
+            if (ref.histIdx === histIdx) { ref.histIdx = history.length - 1; ref.partIdx += offset; }
+          }
+          last.content.push(...parts);
+        } else {
+          history.push({ role: "assistant", content: parts });
+        }
+      }
+    }
+  }
+  return history;
+}
+
+// Socket.IO event handlers
+io.on("connection", (socket) => {
+  console.log("Client connected via Socket.IO");
+  socket.join("session");
+
+  socket.on("reconnect_request", async () => {
+    if (currentSessionId && currentCwd) {
+      console.log("[socket.io] Reconnecting to session:", currentSessionId);
+      // Load conversation history from JSONL using claude-code-kit
+      try {
+        const homeDir = process.env.HOME ?? "/home/debian";
+        const projectKey = currentCwd.replace(/\//g, "-");
+        const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
+        const transcript = await parseTranscript(filePath);
+        const history = transcriptToHistory(transcript);
+        if (history.length > 0) {
+          socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+        }
+      } catch (err) {
+        console.error("[socket.io] Failed to load session history:", err);
+      }
+      socket.emit("message", {
+        type: "session_state",
+        sessionId: currentSessionId,
+        cwd: currentCwd,
+        model: currentModel,
+        permissionMode: currentPermissionMode,
+        isStreaming: currentSession?.isStreaming ?? false,
+      } satisfies ServerMessage);
+    } else {
+      socket.emit("message", { type: "session_ended", reason: "No active session" } satisfies ServerMessage);
+    }
+  });
+
+  socket.on("start_session", async (data: {
+    cwd: string;
+    model?: string;
+    permissionMode?: string;
+    enable1mContext?: boolean;
+    resume?: string;
+  }) => {
+    try {
+      console.log("[socket.io] Starting session:", data.cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
+      currentCwd = data.cwd;
+      if (currentSession) {
+        currentSession.close();
+        currentSession = null;
+      }
+
+      // Clear message cache for new sessions, keep for resume
+      if (!data.resume) {
+        messageCache = [];
+      }
+
+      // Load and send conversation history from JSONL when resuming
+      if (data.resume) {
+        try {
+          const homeDir = process.env.HOME ?? "/home/debian";
+          const projectKey = data.cwd.replace(/\//g, "-");
+          const filePath = `${homeDir}/.claude/projects/${projectKey}/${data.resume}.jsonl`;
+          const transcript = await parseTranscript(filePath);
+          const history = transcriptToHistory(transcript);
+          if (history.length > 0) {
+            socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+          }
+        } catch (err) {
+          console.error("[socket.io] Failed to load resume history:", err);
+        }
+      }
+
+      currentSession = new AgentSession(sendToClient);
+      await currentSession.start({
+        cwd: data.cwd,
+        model: data.model,
+        permissionMode: data.permissionMode as any,
+        enable1mContext: data.enable1mContext,
+        resume: data.resume,
+      });
+    } catch (err) {
+      console.error("[socket.io] start_session error:", err);
+      socket.emit("message", {
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
+      } satisfies ServerMessage);
+    }
+  });
+
+  socket.on("user_message", (data: { content: string }) => {
+    if (!currentSession) {
+      socket.emit("message", {
+        type: "error",
+        message: "No active session. Start a session first.",
+      } satisfies ServerMessage);
+      return;
+    }
+    currentSession.sendUserMessage(data.content);
+  });
+
+  socket.on("permission_response", (data: {
+    toolUseId: string;
+    allow: boolean;
+    updatedInput?: Record<string, unknown>;
+    denyMessage?: string;
+  }) => {
+    currentSession?.resolvePermission(
+      data.toolUseId,
+      data.allow,
+      data.updatedInput,
+      data.denyMessage
+    );
+  });
+
+  socket.on("ask_question_response", (data: {
+    toolUseId: string;
+    questions: unknown[];
+    answers: Record<string, string>;
+  }) => {
+    currentSession?.resolveAskQuestion(
+      data.toolUseId,
+      data.questions,
+      data.answers
+    );
+  });
+
+  socket.on("interrupt", async () => {
+    await currentSession?.interrupt();
+  });
+
+  socket.on("set_model", async (data: { model: string }) => {
+    await currentSession?.setModel(data.model);
+  });
+
+  socket.on("set_permission_mode", async (data: { mode: string }) => {
+    await currentSession?.setPermissionMode(data.mode as any);
+  });
+
+  socket.on("set_thinking_tokens", async (data: { tokens: number | null }) => {
+    await currentSession?.setMaxThinkingTokens(data.tokens);
+  });
+
+  socket.on("get_models", async () => {
+    if (currentSession) {
+      const models = await currentSession.getModels();
+      socket.emit("message", { type: "models", models } satisfies ServerMessage);
+    }
+  });
+
+  socket.on("get_git_status", async (data: { cwd?: string }) => {
+    const cwd = data?.cwd ?? process.cwd();
+    const result = await getGitStatus(cwd);
+    socket.emit("message", { type: "git_status", ...result } satisfies ServerMessage);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected (session kept alive)");
+  });
+});
+
+// TLS config
 const tlsCert = `${import.meta.dir}/../tls.crt`;
 const tlsKey = `${import.meta.dir}/../tls.key`;
 const hasTLS =
@@ -462,11 +459,21 @@ if (hasTLS) {
   console.log(`Server starting on http://${HOST}:${PORT} (no TLS certs found)`);
 }
 
+const engineHandler = engine.handler();
+
 export default {
-  fetch: app.fetch,
-  websocket,
   port: PORT,
   hostname: HOST,
+  ...engineHandler,
+  fetch(req: Request, server: any) {
+    const url = new URL(req.url);
+    // Route engine.io requests to Socket.IO engine
+    if (url.pathname.startsWith("/engine.io")) {
+      return engineHandler.fetch(req, server);
+    }
+    // Everything else goes to Hono (REST + static files)
+    return app.fetch(req, server);
+  },
   ...(hasTLS
     ? {
         tls: {

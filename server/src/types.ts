@@ -1,39 +1,5 @@
 import type { PermissionMode, ModelInfo, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
-// Client → Server messages
-export type ClientMessage =
-  | {
-      type: "start_session";
-      cwd: string;
-      model?: string;
-      permissionMode?: PermissionMode;
-      enable1mContext?: boolean;
-      resume?: string; // session ID to resume
-    }
-  | { type: "user_message"; content: string }
-  | { type: "list_sessions"; cwd: string }
-  | {
-      type: "permission_response";
-      toolUseId: string;
-      allow: boolean;
-      updatedInput?: Record<string, unknown>;
-      denyMessage?: string;
-    }
-  | {
-      type: "ask_question_response";
-      toolUseId: string;
-      questions: unknown[];
-      answers: Record<string, string>;
-    }
-  | { type: "interrupt" }
-  | { type: "set_model"; model: string }
-  | { type: "set_permission_mode"; mode: PermissionMode }
-  | { type: "set_1m_context"; enabled: boolean }
-  | { type: "set_thinking_tokens"; tokens: number | null }
-  | { type: "get_models" }
-  | { type: "get_git_status"; cwd?: string }
-  | { type: "reconnect" };
-
 // Server → Client messages
 export type ServerMessage =
   | { type: "sdk_message"; message: SDKMessage }
@@ -59,18 +25,19 @@ export type ServerMessage =
   | { type: "error"; message: string }
   | { type: "session_started"; sessionId: string }
   | { type: "session_ended"; reason: string }
-  | { type: "session_history"; messages: HistoryMessage[] }
   | { type: "session_state"; sessionId: string; cwd: string; model: string; permissionMode: string; isStreaming: boolean }
-  | { type: "ping" };
+  | { type: "session_history"; messages: HistoryEntry[] };
 
-export type HistoryMessage =
+// Assembled conversation messages for reconnect replay
+export type HistoryEntry =
   | { role: "user"; content: string }
-  | { role: "assistant"; blocks: HistoryBlock[] };
+  | { role: "assistant"; content: HistoryContentPart[] }
+  | { role: "system"; content: string };
 
-export type HistoryBlock =
+export type HistoryContentPart =
   | { type: "text"; text: string }
-  | { type: "thinking"; thinking: string }
-  | { type: "tool_use"; name: string; input: Record<string, unknown>; result?: string };
+  | { type: "reasoning"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string };
 
 export type TokenUsage = {
   inputTokens: number;

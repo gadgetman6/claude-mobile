@@ -9,7 +9,10 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.37",
+    "@constellos/claude-code-kit": "^0.4.0",
+    "@socket.io/bun-engine": "^0.1.0",
     "hono": "^4.7.6",
+    "socket.io": "^4.8.3",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

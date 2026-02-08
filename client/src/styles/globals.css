@@ -1,21 +1,47 @@
+@import "tailwindcss" layer(tailwind);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+@source "../../../node_modules/@assistant-ui/react/dist/**/*.js";
+@source "../../../node_modules/@assistant-ui/react-markdown/dist/**/*.js";
+
+/* shadcn dark theme */
 :root {
-  --bg-primary: #0f0f1a;
-  --bg-secondary: #1a1a2e;
-  --bg-tertiary: #252540;
-  --bg-input: #1e1e35;
-  --text-primary: #e0e0f0;
-  --text-secondary: #a0a0c0;
-  --text-muted: #606080;
-  --accent: #7c6aef;
-  --accent-hover: #9580ff;
-  --success: #4caf50;
-  --warning: #ff9800;
-  --danger: #f44336;
-  --border: #2a2a45;
-  --code-bg: #16162a;
-  --thinking-bg: #1a1a30;
-  --tool-bg: #151528;
-  --radius: 8px;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #09090b;
+  --card-foreground: #fafafa;
+  --popover: #09090b;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
+  --radius: 0.625rem;
+
+  /* App-specific variables */
+  --bg-primary: #09090b;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+  --bg-input: #1c1c1f;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --code-bg: #18181b;
+  --thinking-bg: #1c1c1f;
+  --tool-bg: #141416;
   --radius-sm: 4px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
@@ -136,97 +162,40 @@ html, body, #root {
   font-weight: 500;
 }
 
-/* Chat area */
-.chat-area {
+/* assistant-ui Thread fills available space */
+.aui-root.aui-thread-root {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  min-height: 0;
 }
 
-/* Messages */
-.msg {
-  max-width: 100%;
-  word-break: break-word;
+/* Remove max-width constraint on mobile */
+.aui-thread-viewport > * {
+  max-width: 100% !important;
 }
 
-.msg-user {
-  background: var(--accent);
-  color: white;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  border-bottom-right-radius: var(--radius-sm);
-  align-self: flex-end;
-  max-width: 85%;
-  font-size: 13px;
-  line-height: 1.4;
+/* Message spacing */
+.aui-thread-viewport {
+  gap: 16px !important;
+  padding: 16px !important;
 }
 
-.msg-assistant {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* User message bubble padding */
+.aui-user-message-content {
+  padding: 10px 14px;
 }
 
-.msg-system {
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-muted);
+/* Assistant message padding */
+.aui-assistant-message-content {
   padding: 4px 0;
+  line-height: 1.6;
 }
 
-.msg-result {
-  background: var(--bg-tertiary);
-  border-left: 3px solid var(--success);
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  font-size: 12px;
+/* Safe area for composer on notched phones */
+.aui-thread-root .aui-composer-root {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.msg-result.has-errors {
-  border-left-color: var(--danger);
-}
-
-.msg-result-meta {
-  display: flex;
-  gap: 12px;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-/* Text content */
-.text-block {
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.text-block code {
-  background: var(--code-bg);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-family: "SF Mono", "Fira Code", monospace;
-}
-
-.text-block pre {
-  background: var(--code-bg);
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  margin: 6px 0;
-}
-
-.text-block pre code {
-  padding: 0;
-  background: none;
-}
-
-/* Thinking block */
+/* Thinking/reasoning block — assistant-ui renders these automatically */
 .thinking-block {
   background: var(--thinking-bg);
   border: 1px solid var(--border);
@@ -343,6 +312,18 @@ html, body, #root {
 .diff-container {
   max-height: 400px;
   overflow: auto;
+}
+
+/* react-diff-viewer-continued dark theme overrides for mobile */
+.diff-container table {
+  font-size: 11px !important;
+}
+.diff-container td {
+  padding: 0 4px !important;
+}
+.diff-container pre {
+  font-size: 11px !important;
+  line-height: 1.3 !important;
 }
 
 /* Permission prompt */
@@ -516,68 +497,6 @@ html, body, #root {
   color: var(--text-primary);
 }
 
-/* Chat input */
-.chat-input-area {
-  padding: 8px 12px;
-  padding-bottom: calc(8px + var(--safe-bottom));
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.chat-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.chat-input {
-  flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 8px 14px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: inherit;
-  resize: none;
-  max-height: 120px;
-  line-height: 1.4;
-  outline: none;
-}
-
-.chat-input:focus {
-  border-color: var(--accent);
-}
-
-.chat-input::placeholder {
-  color: var(--text-muted);
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 18px;
-}
-
-.send-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.send-btn.interrupt {
-  background: var(--danger);
-}
-
 /* Permission mode badge */
 .perm-badge {
   font-size: 10px;
@@ -585,11 +504,12 @@ html, body, #root {
   border-radius: 8px;
   font-weight: 500;
   white-space: nowrap;
+  border: 1px solid;
 }
-.perm-badge.default { background: rgba(76, 175, 80, 0.2); color: var(--success); }
-.perm-badge.acceptEdits { background: rgba(255, 152, 0, 0.2); color: var(--warning); }
-.perm-badge.bypassPermissions { background: rgba(244, 67, 54, 0.2); color: var(--danger); }
-.perm-badge.plan { background: rgba(124, 106, 239, 0.2); color: var(--accent); }
+.perm-badge.default { border-color: var(--border); color: var(--muted-foreground); background: transparent; }
+.perm-badge.acceptEdits { border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; background: rgba(245, 158, 11, 0.1); }
+.perm-badge.bypassPermissions { border-color: rgba(239, 68, 68, 0.3); color: #f87171; background: rgba(239, 68, 68, 0.1); }
+.perm-badge.plan { border-color: rgba(168, 162, 158, 0.3); color: #a8a29e; background: rgba(168, 162, 158, 0.1); }
 
 /* Task card */
 .task-card {
@@ -841,7 +761,7 @@ html, body, #root {
   padding-bottom: calc(24px + var(--safe-bottom));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  min-height: 0;  /* crucial: allows flex child to shrink below content size */
+  min-height: 0;
 }
 
 .start-title {
@@ -879,18 +799,6 @@ html, body, #root {
   border-color: var(--accent);
 }
 
-/* Streaming cursor */
-@keyframes blink {
-  50% { opacity: 0; }
-}
-
-.streaming-cursor::after {
-  content: "\25AE";
-  animation: blink 0.8s step-end infinite;
-  color: var(--accent);
-  margin-left: 2px;
-}
-
 /* Spinner */
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -903,4 +811,88 @@ html, body, #root {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ModelInfo, PermissionMode } from "../types";
 
 const THINKING_PRESETS = [
@@ -101,7 +102,41 @@ export function Settings({
             To enable 1M context mode, start a new session with it enabled from the start screen.
           </div>
         </div>
+
+        <div className="settings-section">
+          <div className="settings-label">Cache</div>
+          <ClearCacheButton />
+        </div>
       </div>
     </div>
+  );
+}
+
+function ClearCacheButton() {
+  const [cleared, setCleared] = useState(false);
+
+  const handleClear = async () => {
+    try {
+      const regs = await navigator.serviceWorker?.getRegistrations();
+      if (regs) {
+        for (const reg of regs) await reg.unregister();
+      }
+      const names = await caches.keys();
+      for (const name of names) await caches.delete(name);
+      setCleared(true);
+      setTimeout(() => setCleared(false), 2000);
+    } catch {
+      // ignore errors
+    }
+  };
+
+  return (
+    <button
+      className="btn btn-primary"
+      style={{ width: "100%", padding: "10px", fontSize: 13 }}
+      onClick={handleClear}
+    >
+      {cleared ? "Cache cleared!" : "Clear PWA cache"}
+    </button>
   );
 }

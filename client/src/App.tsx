@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { useAgent, getSavedSession, clearSavedSession } from "./hooks/useAgent";
+import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { Thread } from "@/components/assistant-ui/thread";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useClaudeSession, getSavedSession, clearSavedSession, ClaudeSessionContext } from "./hooks/useClaudeSession";
+import { useClaudeRuntime } from "./hooks/useClaudeRuntime";
 import { usePushNotifications } from "./hooks/usePushNotifications";
-import { ChatView } from "./components/ChatView";
-import { ChatInput } from "./components/ChatInput";
+import { toolUIs } from "./components/tools";
 import { TokenUsageBar } from "./components/TokenUsageBar";
 import { PermissionPrompt } from "./components/PermissionPrompt";
 import { Settings } from "./components/Settings";
@@ -27,12 +30,19 @@ const PERM_LABELS: Record<string, { label: string; cls: string }> = {
 };
 
 export function App() {
-  const agent = useAgent();
+  const session = useClaudeSession();
   usePushNotifications();
   const [showSettings, setShowSettings] = useState(false);
   const [showGit, setShowGit] = useState(false);
 
-  // Start session form state — restore last cwd from localStorage
+  const runtime = useClaudeRuntime({
+    messages: session.messages,
+    isRunning: session.isStreaming,
+    onNew: session.sendMessage,
+    onCancel: session.interrupt,
+  });
+
+  // Start session form state
   const [cwd, setCwd] = useState(() => {
     try { return localStorage.getItem(CWD_KEY) ?? "/home/debian"; } catch { return "/home/debian"; }
   });
@@ -42,22 +52,20 @@ export function App() {
   const [inSession, setInSession] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
 
-  // Push notifications handled by usePushNotifications hook
-
-  // Auto-restore session from localStorage on mount
+  // Auto-restore session
   useEffect(() => {
     const saved = getSavedSession();
     if (saved) {
       setCwd(saved.cwd);
       setStartModel(saved.model);
-      setStartPermMode(saved.permissionMode as any);
-      if (agent.wsState === "connected") {
+      setStartPermMode(saved.permissionMode as "default" | "acceptEdits" | "bypassPermissions");
+      if (session.connectionState === "connected") {
         setInSession(true);
       }
     }
-  }, [agent.wsState]);
+  }, [session.connectionState]);
 
-  // Save cwd to localStorage and fetch recent sessions when it changes
+  // Save cwd + fetch recent sessions
   useEffect(() => {
     const dir = cwd.trim();
     if (dir) {
@@ -74,21 +82,20 @@ export function App() {
     const dir = cwd.trim() || undefined;
     if (!dir) return;
     setInSession(true);
-    agent.startSession(dir, startModel, startPermMode, enable1m, resumeId);
-  }, [cwd, startModel, startPermMode, enable1m, agent]);
+    session.startSession(dir, startModel, startPermMode, enable1m, resumeId);
+  }, [cwd, startModel, startPermMode, enable1m, session]);
 
   const handleBack = useCallback(() => {
     setInSession(false);
     clearSavedSession();
-    // Don't close the server session — it continues in background
   }, []);
 
   const handleOpenGit = useCallback(() => {
     setShowGit(true);
-    agent.fetchGitStatus(cwd || undefined);
-  }, [agent, cwd]);
+    session.fetchGitStatus(cwd || undefined);
+  }, [session, cwd]);
 
-  const perm = PERM_LABELS[agent.permissionMode] ?? PERM_LABELS.default;
+  const perm = PERM_LABELS[session.permissionMode] ?? PERM_LABELS.default;
 
   // Start screen
   if (!inSession) {
@@ -99,7 +106,7 @@ export function App() {
             <h1>Claude Mobile</h1>
           </div>
           <div className="header-right">
-            <div className={`connection-dot ${agent.wsState}`} title={agent.wsState} />
+            <div className={`connection-dot ${session.connectionState}`} title={session.connectionState} />
           </div>
         </div>
 
@@ -131,7 +138,7 @@ export function App() {
             <select
               className="settings-select"
               value={startPermMode}
-              onChange={(e) => setStartPermMode(e.target.value as any)}
+              onChange={(e) => setStartPermMode(e.target.value as "default" | "acceptEdits" | "bypassPermissions")}
             >
               <option value="default">Default permissions</option>
               <option value="acceptEdits">Accept edits</option>
@@ -148,16 +155,20 @@ export function App() {
 
             <button
               className="btn btn-primary"
-              style={{ width: "100%", padding: "12px", opacity: (!cwd.trim() || agent.wsState !== "connected") ? 0.5 : 1 }}
+              style={{
+                width: "100%",
+                padding: "12px",
+                opacity: (!cwd.trim() || session.connectionState !== "connected") ? 0.5 : 1,
+              }}
               onClick={() => handleStartSession()}
-              disabled={!cwd.trim() || agent.wsState !== "connected"}
+              disabled={!cwd.trim() || session.connectionState !== "connected"}
             >
-              {agent.wsState !== "connected" ? "Connecting..." : "New Session"}
+              {session.connectionState !== "connected" ? "Connecting..." : "New Session"}
             </button>
 
-            {agent.error && (
+            {session.error && (
               <div style={{ color: "var(--danger)", fontSize: 12, textAlign: "center" }}>
-                {agent.error}
+                {session.error}
               </div>
             )}
 
@@ -194,80 +205,83 @@ export function App() {
 
   // Active session
   return (
-    <div className="app">
-      {/* Header */}
-      <div className="header">
-        <div className="header-left">
-          <button className="btn-icon" onClick={handleBack} title="Back to sessions" style={{ fontSize: 14 }}>
-            &#8592;
-          </button>
-          <div className={`connection-dot ${agent.wsState}`} title={agent.wsState} />
-          <h1>Claude</h1>
-          <span className={`perm-badge ${perm.cls}`}>{perm.label}</span>
+    <ClaudeSessionContext.Provider value={{ nestedContentMap: session.nestedContentMap }}>
+      <AssistantRuntimeProvider runtime={runtime}>
+        <TooltipProvider>
+        <div className="app">
+          {/* Header */}
+          <div className="header">
+            <div className="header-left">
+              <button className="btn-icon" onClick={handleBack} title="Back to sessions" style={{ fontSize: 14 }}>
+                &#8592;
+              </button>
+              <div className={`connection-dot ${session.connectionState}`} title={session.connectionState} />
+              <h1>Claude</h1>
+              <span className={`perm-badge ${perm.cls}`}>{perm.label}</span>
+            </div>
+            <div className="header-right">
+              <button className="btn-icon" onClick={handleOpenGit} title="Git status">
+                G
+              </button>
+              <button className="btn-icon" onClick={() => { setShowSettings(true); session.fetchModels(); }} title="Settings">
+                &#9881;
+              </button>
+            </div>
+          </div>
+
+          {/* Compacting indicator */}
+          {session.isCompacting && (
+            <div className="usage-bar" style={{ justifyContent: "center", color: "var(--warning)" }}>
+              <div className="spinner" style={{ width: 12, height: 12 }} />
+              <span>Compacting context...</span>
+            </div>
+          )}
+
+          {/* Token usage */}
+          <TokenUsageBar usage={session.usage} />
+
+          {/* Thread (messages + composer) — styled by assistant-ui */}
+          <Thread />
+
+          {/* Permission prompt overlay */}
+          {session.pendingPermission && (
+            <PermissionPrompt
+              request={session.pendingPermission}
+              onRespond={session.respondPermission}
+              onRespondQuestion={session.respondAskQuestion}
+            />
+          )}
+
+          {/* Tool UI registrations */}
+          {toolUIs.map((ToolUI, i) => (
+            <ToolUI key={i} />
+          ))}
+
+          {/* Settings panel */}
+          {showSettings && (
+            <Settings
+              models={session.models}
+              currentModel={session.currentModel}
+              permissionMode={session.permissionMode}
+              maxThinkingTokens={session.maxThinkingTokens}
+              onChangeModel={session.changeModel}
+              onChangePermissionMode={session.changePermissionMode}
+              onChangeThinkingTokens={session.changeThinkingTokens}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
+
+          {/* Git status panel */}
+          {showGit && (
+            <GitStatusPanel
+              gitStatus={session.gitStatus}
+              onRefresh={() => session.fetchGitStatus(cwd || undefined)}
+              onClose={() => setShowGit(false)}
+            />
+          )}
         </div>
-        <div className="header-right">
-          <button className="btn-icon" onClick={handleOpenGit} title="Git status">
-            G
-          </button>
-          <button className="btn-icon" onClick={() => { setShowSettings(true); agent.fetchModels(); }} title="Settings">
-            &#9881;
-          </button>
-        </div>
-      </div>
-
-      {/* Compacting indicator */}
-      {agent.isCompacting && (
-        <div className="usage-bar" style={{ justifyContent: "center", color: "var(--warning)" }}>
-          <div className="spinner" style={{ width: 12, height: 12 }} />
-          <span>Compacting context...</span>
-        </div>
-      )}
-
-      {/* Token usage */}
-      <TokenUsageBar usage={agent.usage} />
-
-      {/* Messages */}
-      <ChatView messages={agent.messages} />
-
-      {/* Permission prompt overlay */}
-      {agent.pendingPermission && (
-        <PermissionPrompt
-          request={agent.pendingPermission}
-          onRespond={agent.respondPermission}
-          onRespondQuestion={agent.respondAskQuestion}
-        />
-      )}
-
-      {/* Chat input */}
-      <ChatInput
-        onSend={agent.sendMessage}
-        onInterrupt={agent.interrupt}
-        isStreaming={agent.isStreaming}
-        disabled={agent.wsState !== "connected"}
-      />
-
-      {/* Settings panel */}
-      {showSettings && (
-        <Settings
-          models={agent.models}
-          currentModel={agent.currentModel}
-          permissionMode={agent.permissionMode}
-          maxThinkingTokens={agent.maxThinkingTokens}
-          onChangeModel={agent.changeModel}
-          onChangePermissionMode={agent.changePermissionMode}
-          onChangeThinkingTokens={agent.changeThinkingTokens}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
-
-      {/* Git status panel */}
-      {showGit && (
-        <GitStatusPanel
-          gitStatus={agent.gitStatus}
-          onRefresh={() => agent.fetchGitStatus(cwd || undefined)}
-          onClose={() => setShowGit(false)}
-        />
-      )}
-    </div>
+        </TooltipProvider>
+      </AssistantRuntimeProvider>
+    </ClaudeSessionContext.Provider>
   );
 }

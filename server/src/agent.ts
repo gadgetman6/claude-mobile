@@ -75,6 +75,7 @@ export class AgentSession {
   private send: SendFn;
   private sessionId: string | null = null;
   private running = false;
+  private streaming = false;
   private usage: TokenUsage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -178,7 +179,8 @@ export class AgentSession {
       for await (const message of q) {
         const msg = message as SDKMessage;
         const extra = msg.type === "stream_event" ? (msg as any).event?.type : ("subtype" in msg ? (msg as any).subtype : "");
-        console.log("[agent] Got message:", msg.type, extra);
+        const parentId = (msg as any).parent_tool_use_id;
+        console.log("[agent] Got message:", msg.type, extra, parentId ? `(parent: ${parentId})` : "");
 
         // Extract session ID from init message
         if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {
@@ -196,9 +198,21 @@ export class AgentSession {
           }
         }
 
-        // Track streaming token usage from partial messages
+        // Track streaming state and token usage from partial messages
         if (msg.type === "stream_event") {
+          const eventType = (msg as any).event?.type;
+          const parentId = (msg as any).parent_tool_use_id;
+          // Only track main-level streaming (not subagent)
+          if (!parentId) {
+            if (eventType === "message_start") this.streaming = true;
+            else if (eventType === "message_stop") this.streaming = false;
+          }
           this.updateUsageFromStreamEvent(msg);
+        }
+
+        // Track streaming state from result messages
+        if (msg.type === "result") {
+          this.streaming = false;
         }
 
         // Forward all SDK messages to client
@@ -416,5 +430,9 @@ export class AgentSession {
 
   get isRunning() {
     return this.running;
+  }
+
+  get isStreaming() {
+    return this.streaming;
   }
 }
