@@ -47,7 +47,7 @@ export function App() {
     try { return localStorage.getItem(CWD_KEY) ?? "/home/debian"; } catch { return "/home/debian"; }
   });
   const [startModel, setStartModel] = useState("claude-opus-4-6");
-  const [startPermMode, setStartPermMode] = useState<"default" | "acceptEdits" | "bypassPermissions">("default");
+  const [startPermMode, setStartPermMode] = useState<"default" | "acceptEdits" | "bypassPermissions">("bypassPermissions");
   const [enable1m, setEnable1m] = useState(true);
   const [inSession, setInSession] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
