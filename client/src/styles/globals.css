@@ -415,9 +415,12 @@ html, body, #root {
   transition: border-color 0.15s;
 }
 
-.question-option:hover,
+.question-option:hover {
+  border-color: #52525b;
+}
 .question-option.selected {
-  border-color: var(--accent);
+  border-color: #d4d4d8;
+  background: #1c1c1f;
 }
 
 .question-option-label {
