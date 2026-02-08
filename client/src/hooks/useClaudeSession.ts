@@ -449,6 +449,12 @@ export function useClaudeSession() {
         break;
       }
       case "session_state": {
+        // Clear messages for replay from cache
+        setMessages([]);
+        streamingBlocksRef.current = [];
+        partialJsonRef.current.clear();
+        nestedContentMapRef.current.clear();
+        setNestedContentVersion(0);
         setSessionId(msg.sessionId);
         setCurrentModel(msg.model);
         setPermissionMode(msg.permissionMode as PermissionMode);
@@ -607,6 +613,7 @@ export function useClaudeSession() {
 
   const fetchGitStatus = useCallback((cwd?: string) => { emit("get_git_status", { cwd }); }, [emit]);
   const fetchModels = useCallback(() => { emit("get_models"); }, [emit]);
+  const refreshMessages = useCallback(() => { emit("reconnect_request"); }, [emit]);
 
   return {
     connectionState,
@@ -634,5 +641,6 @@ export function useClaudeSession() {
     changeThinkingTokens,
     fetchGitStatus,
     fetchModels,
+    refreshMessages,
   };
 }

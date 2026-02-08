@@ -381,29 +381,20 @@ io.on("connection", (socket) => {
 
   socket.on("reconnect_request", async () => {
     if (currentSessionId && currentCwd) {
-      console.log("[socket.io] Reconnecting to session:", currentSessionId);
-      // Load conversation history from JSONL using claude-code-kit
-      try {
-        const homeDir = process.env.HOME ?? "/home/debian";
-        const projectKey = currentCwd.replace(/\//g, "-");
-        const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
-        const transcript = await parseTranscript(filePath);
-        const history = transcriptToHistory(transcript);
-        if (history.length > 0) {
-          socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
-        }
-      } catch (err) {
-        console.error("[socket.io] Failed to load session history:", err);
-      }
-      socket.emit("message", {
-        type: "session_state",
+      console.log("[socket.io] Reconnecting to session:", currentSessionId, `(${messageCache.length} cached messages)`);
+      // Signal client to clear messages before replay
+      socket.emit("message", { type: "session_state",
         sessionId: currentSessionId,
         cwd: currentCwd,
         model: currentModel,
         permissionMode: currentPermissionMode,
         isStreaming: currentSession?.isStreaming ?? false,
       } satisfies ServerMessage);
-      // Send current token usage on reconnect
+      // Replay all cached messages — client rebuilds full state
+      for (const msg of messageCache) {
+        socket.emit("message", msg);
+      }
+      // Send current token usage
       if (currentSession) {
         socket.emit("message", {
           type: "token_usage",
@@ -411,6 +402,21 @@ io.on("connection", (socket) => {
         } satisfies ServerMessage);
       }
     } else {
+      // Fallback: try loading from JSONL transcript
+      if (currentCwd && currentSessionId) {
+        try {
+          const homeDir = process.env.HOME ?? "/home/debian";
+          const projectKey = currentCwd.replace(/\//g, "-");
+          const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
+          const transcript = await parseTranscript(filePath);
+          const history = transcriptToHistory(transcript);
+          if (history.length > 0) {
+            socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+          }
+        } catch (err) {
+          console.error("[socket.io] Failed to load session history:", err);
+        }
+      }
       socket.emit("message", { type: "session_ended", reason: "No active session" } satisfies ServerMessage);
     }
   });
