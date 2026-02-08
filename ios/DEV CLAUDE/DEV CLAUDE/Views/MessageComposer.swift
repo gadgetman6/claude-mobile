@@ -45,6 +45,7 @@ struct MessageComposerView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .focused($isFocused)
+                        .accessibilityIdentifier("messageInput")
                 }
                 .background(Color(.systemGray6))
                 .clipShape(RoundedRectangle(cornerRadius: 22))
@@ -73,6 +74,8 @@ struct MessageComposerView: View {
                             .clipShape(Circle())
                     }
                     .disabled(!canSend)
+                    .accessibilityIdentifier("sendButton")
+                    .accessibilityLabel("Send")
                 }
             }
             .padding(.horizontal, 12)

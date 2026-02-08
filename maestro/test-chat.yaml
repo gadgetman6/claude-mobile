@@ -1,0 +1,63 @@
+appId: sohan.DEV-CLAUDE
+---
+# Chat test: send message, verify streaming response
+
+- launchApp
+- assertVisible: "Servers"
+
+# Setup server
+- tapOn:
+    text: "Add Server"
+    optional: true
+- runFlow:
+    when:
+      visible: "Server Details"
+    commands:
+      - tapOn: "https://100.x.x.x:3333"
+      - inputText: "http://localhost:3333"
+      - tapOn: "My Desktop"
+      - inputText: "Chat Test"
+      - tapOn: "Save"
+
+- tapOn: "Chat Test"
+- assertVisible: "Working Directory"
+
+# Set CWD and start new session
+- tapOn: "/path/to/project"
+- inputText: "/tmp/chat-test"
+- hideKeyboard
+- tapOn:
+    point: 50%, 5%
+- waitForAnimationToEnd
+
+# Scroll up to see New Session button
+- swipe:
+    start: 50%, 50%
+    end: 50%, 80%
+    duration: 300
+
+# Start session
+- tapOn: "New Session"
+
+# Wait for chat screen (toolbar shows server name)
+- extendedWaitUntil:
+    visible: "Chat Test"
+    timeout: 10000
+
+# Wait a moment for session to initialize
+- waitForAnimationToEnd
+
+# Type in the message composer
+- tapOn:
+    id: "messageInput"
+- inputText: "Hello from Maestro"
+
+# Tap send button
+- tapOn:
+    id: "sendButton"
+- waitForAnimationToEnd
+
+# Wait for response (check token usage bar which uses plain Text)
+- extendedWaitUntil:
+    visible: "$0.0100"
+    timeout: 15000

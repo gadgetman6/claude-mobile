@@ -1,0 +1,23 @@
+appId: sohan.DEV-CLAUDE
+---
+# Shared setup: ensure a server is added and navigate to session screen
+- launchApp
+- assertVisible: "Servers"
+
+# Add server if needed
+- tapOn:
+    text: "Add Server"
+    optional: true
+- runFlow:
+    when:
+      visible: "Server Details"
+    commands:
+      - tapOn: "https://100.x.x.x:3333"
+      - inputText: "http://localhost:3333"
+      - tapOn: "My Desktop"
+      - inputText: "Test"
+      - tapOn: "Save"
+
+# Navigate to server
+- tapOn: "Test"
+- assertVisible: "Working Directory"

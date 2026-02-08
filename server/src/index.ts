@@ -20,6 +20,13 @@ const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Ensure node's directory is on PATH (needed when launched via nohup/launchd
+// where the shell profile isn't sourced and nvm paths are missing)
+const nodeDir = dirname(process.execPath);
+if (!process.env.PATH?.includes(nodeDir)) {
+  process.env.PATH = `${nodeDir}:${process.env.PATH ?? ""}`;
+}
+
 const PORT = parseInt(process.env.PORT ?? "3333");
 const HOST = process.env.HOST ?? "0.0.0.0";
 
@@ -617,8 +624,13 @@ io.on("connection", (socket) => {
   }) => {
     try {
       const provider = data.provider ?? "claude";
-      console.log("[socket.io] Starting session:", provider, data.cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
-      currentCwd = data.cwd;
+      // Expand ~ to home directory (Node.js spawn doesn't expand tilde)
+      const homeDir = process.env.HOME ?? "/home/debian";
+      const cwd = data.cwd.startsWith("~/")
+        ? data.cwd.replace("~", homeDir)
+        : data.cwd === "~" ? homeDir : data.cwd;
+      console.log("[socket.io] Starting session:", provider, cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
+      currentCwd = cwd;
       currentProvider = provider;
       if (currentSession) {
         currentSession.close();
@@ -642,15 +654,14 @@ io.on("connection", (socket) => {
         }
         currentSession = new CodexSession(sendToClient);
         await (currentSession as CodexSession).start({
-          cwd: data.cwd,
+          cwd,
           model: data.model,
           resume: data.resume,
         });
       } else {
         if (data.resume) {
           try {
-            const homeDir = process.env.HOME ?? "/home/debian";
-            const projectKey = data.cwd.replace(/\//g, "-");
+            const projectKey = cwd.replace(/\//g, "-");
             const filePath = `${homeDir}/.claude/projects/${projectKey}/${data.resume}.jsonl`;
             const transcript = await parseTranscript(filePath);
             const history = transcriptToHistory(transcript);
@@ -664,7 +675,7 @@ io.on("connection", (socket) => {
 
         currentSession = new AgentSession(sendToClient);
         await (currentSession as AgentSession).start({
-          cwd: data.cwd,
+          cwd,
           model: data.model,
           permissionMode: data.permissionMode as any,
           enable1mContext: data.enable1mContext,

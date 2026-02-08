@@ -1,30 +1,51 @@
 appId: sohan.DEV-CLAUDE
 ---
-# Phase 1: App launches to Server List (empty state)
+# Smoke test: basic app flow - launch, add server, configure session
+
+# 1. App launches to empty server list
 - launchApp
 - assertVisible: "Servers"
 - assertVisible: "No Servers"
 - assertVisible: "Add Server"
 
-# Phase 2: Add a server
+# 2. Add a server
 - tapOn: "Add Server"
-- assertVisible: "Add Server"
+- assertVisible: "Server Details"
 - tapOn: "https://100.x.x.x:3333"
 - inputText: "http://localhost:3333"
 - tapOn: "My Desktop"
-- inputText: "Test Server"
+- inputText: "Smoke Test"
 - tapOn: "Save"
 
-# Phase 3: Server appears in list
-- assertVisible: "Test Server"
+# 3. Server appears in list
+- assertVisible: "Smoke Test"
 - assertVisible: "localhost:3333"
 
-# Phase 4: Tap server to navigate to Start Session screen
-- tapOn: "Test Server"
+# 4. Navigate to session config
+- tapOn: "Smoke Test"
 - assertVisible: "Working Directory"
 - assertVisible: "Provider"
+- assertVisible: "Claude"
+- assertVisible: "Codex"
 - assertVisible: "New Session"
 
-# Phase 5: Fill in session details
+# 5. Fill CWD
 - tapOn: "/path/to/project"
 - inputText: "/tmp/test"
+- hideKeyboard
+- tapOn:
+    point: 50%, 5%
+
+# 6. Verify model picker
+- assertVisible: "Claude Opus 4.6"
+
+# 7. Verify options section
+- assertVisible: "Permissions"
+
+# 8. Switch to Codex and back
+- swipe:
+    start: 50%, 50%
+    end: 50%, 80%
+    duration: 300
+- tapOn: "Codex"
+- tapOn: "Claude"

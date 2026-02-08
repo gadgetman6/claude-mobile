@@ -1,0 +1,101 @@
+appId: sohan.DEV-CLAUDE
+---
+# Scroll stress: resume 200-message session, scroll aggressively
+
+- launchApp
+- assertVisible: "Servers"
+
+# Setup
+- tapOn:
+    text: "Add Server"
+    optional: true
+- runFlow:
+    when:
+      visible: "Server Details"
+    commands:
+      - tapOn: "https://100.x.x.x:3333"
+      - inputText: "http://localhost:3333"
+      - tapOn: "My Desktop"
+      - inputText: "Stress"
+      - tapOn: "Save"
+
+- tapOn: "Stress"
+- assertVisible: "Working Directory"
+- tapOn: "/path/to/project"
+- inputText: "/tmp/stress"
+- hideKeyboard
+- tapOn:
+    point: 50%, 5%
+- waitForAnimationToEnd
+
+# Scroll to sessions
+- swipe:
+    start: 50%, 80%
+    end: 50%, 30%
+    duration: 500
+- waitForAnimationToEnd
+
+# Resume large session
+- extendedWaitUntil:
+    visible: "$12.50"
+    timeout: 15000
+- tapOn: "$12.50"
+
+# Wait for chat
+- extendedWaitUntil:
+    visible: "Stress"
+    timeout: 15000
+- waitForAnimationToEnd
+
+# Aggressive scroll up
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 200
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 200
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 200
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 200
+- swipe:
+    start: 50%, 30%
+    end: 50%, 90%
+    duration: 200
+
+# Load more if visible
+- tapOn:
+    text: "Load earlier messages"
+    optional: true
+- waitForAnimationToEnd
+
+# Aggressive scroll down
+- swipe:
+    start: 50%, 90%
+    end: 50%, 10%
+    duration: 200
+- swipe:
+    start: 50%, 90%
+    end: 50%, 10%
+    duration: 200
+- swipe:
+    start: 50%, 90%
+    end: 50%, 10%
+    duration: 200
+- swipe:
+    start: 50%, 90%
+    end: 50%, 10%
+    duration: 200
+- swipe:
+    start: 50%, 90%
+    end: 50%, 10%
+    duration: 200
+
+# App should still be alive - verify toolbar
+- assertVisible: "Stress"

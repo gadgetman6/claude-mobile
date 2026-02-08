@@ -1,0 +1,47 @@
+appId: sohan.DEV-CLAUDE
+---
+# Server management: add, edit, delete servers
+
+# 1. Launch to empty state
+- launchApp
+- assertVisible: "Servers"
+- assertVisible: "No Servers"
+
+# 2. Add first server
+- tapOn: "Add Server"
+- tapOn: "https://100.x.x.x:3333"
+- inputText: "http://localhost:3333"
+- tapOn: "My Desktop"
+- inputText: "Server Alpha"
+- tapOn: "Save"
+- assertVisible: "Server Alpha"
+
+# 3. Add second server
+- tapOn:
+    id: ".*plus.*"
+    optional: true
+- tapOn:
+    text: "Add Server"
+    optional: true
+
+# If the add button was the + in toolbar, we need to handle the sheet
+- runFlow:
+    when:
+      visible: "Server Details"
+    commands:
+      - tapOn: "https://100.x.x.x:3333"
+      - inputText: "http://192.168.1.100:3333"
+      - tapOn: "My Desktop"
+      - inputText: "Server Beta"
+      - tapOn: "Save"
+
+# 4. Verify both servers visible
+- assertVisible: "Server Alpha"
+
+# 5. Navigate into server and back
+- tapOn: "Server Alpha"
+- assertVisible: "Working Directory"
+- tapOn:
+    point: 5%, 5%
+- waitForAnimationToEnd
+- assertVisible: "Servers"

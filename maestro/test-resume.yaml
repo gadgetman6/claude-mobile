@@ -1,0 +1,57 @@
+appId: sohan.DEV-CLAUDE
+---
+# Resume test: resume a session with history, verify messages load
+
+- launchApp
+- assertVisible: "Servers"
+
+# Setup server
+- tapOn:
+    text: "Add Server"
+    optional: true
+- runFlow:
+    when:
+      visible: "Server Details"
+    commands:
+      - tapOn: "https://100.x.x.x:3333"
+      - inputText: "http://localhost:3333"
+      - tapOn: "My Desktop"
+      - inputText: "Resume Test"
+      - tapOn: "Save"
+
+- tapOn: "Resume Test"
+- assertVisible: "Working Directory"
+
+# Set CWD
+- tapOn: "/path/to/project"
+- inputText: "/tmp/resume-test"
+- hideKeyboard
+- tapOn:
+    point: 50%, 5%
+- waitForAnimationToEnd
+
+# Scroll to see recent sessions
+- swipe:
+    start: 50%, 80%
+    end: 50%, 30%
+    duration: 500
+- waitForAnimationToEnd
+
+# Resume the test session with tool calls
+- extendedWaitUntil:
+    visible: "$1.23"
+    timeout: 10000
+- tapOn: "$1.23"
+
+# Wait for chat to load with history
+- extendedWaitUntil:
+    visible: "Resume Test"
+    timeout: 10000
+- waitForAnimationToEnd
+
+# Send a new message in the resumed session
+- tapOn: "Send a message"
+- inputText: "Follow-up message"
+- tapOn:
+    point: 95%, 95%
+- waitForAnimationToEnd
