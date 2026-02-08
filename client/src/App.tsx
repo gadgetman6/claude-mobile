@@ -205,7 +205,7 @@ export function App() {
 
   // Active session
   return (
-    <ClaudeSessionContext.Provider value={{ nestedContentMap: session.nestedContentMap }}>
+    <ClaudeSessionContext.Provider value={{ nestedContentMap: session.nestedContentMap, nestedContentVersion: session.nestedContentVersion }}>
       <AssistantRuntimeProvider runtime={runtime}>
         <TooltipProvider>
         <div className="app">

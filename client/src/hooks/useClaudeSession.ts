@@ -46,10 +46,12 @@ export function getSavedSession(): SavedSession | null {
 
 export type ClaudeSessionContextType = {
   nestedContentMap: Map<string, ThreadMessageLike[]>;
+  nestedContentVersion: number;
 };
 
 export const ClaudeSessionContext = createContext<ClaudeSessionContextType>({
   nestedContentMap: new Map(),
+  nestedContentVersion: 0,
 });
 
 export function useClaudeSessionContext() {
@@ -98,7 +100,8 @@ export function useClaudeSession() {
   const [error, setError] = useState<string | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
   const [maxThinkingTokens, setMaxThinkingTokens] = useState<number | null>(null);
-  const [nestedContentMap] = useState(() => new Map<string, ThreadMessageLike[]>());
+  const nestedContentMapRef = useRef(new Map<string, ThreadMessageLike[]>());
+  const [nestedContentVersion, setNestedContentVersion] = useState(0);
 
   // Streaming accumulation refs (mutable for performance)
   const streamingBlocksRef = useRef<StreamBlock[]>([]);
@@ -218,11 +221,12 @@ export function useClaudeSession() {
 
         if (parentId) {
           // Subagent response — store in nested content map for TaskToolUI
-          const existing = nestedContentMap.get(parentId) ?? [];
-          nestedContentMap.set(parentId, [
+          const existing = nestedContentMapRef.current.get(parentId) ?? [];
+          nestedContentMapRef.current.set(parentId, [
             ...existing,
             { role: "assistant" as const, id: aMsg.uuid, content },
           ]);
+          setNestedContentVersion((v) => v + 1);
         } else if (!streamingBlocksRef.current.length) {
           setMessages((prev) => [
             ...prev,
@@ -233,6 +237,11 @@ export function useClaudeSession() {
       }
 
       case "stream_event": {
+        const parentId = (msg as any).parent_tool_use_id as string | null;
+        if (parentId) {
+          // Subagent stream event — skip main streaming, handled via assistant messages
+          break;
+        }
         setIsStreaming(true);
         handleStreamEvent(msg as unknown as SDKPartialMessage);
         break;
@@ -258,7 +267,7 @@ export function useClaudeSession() {
         break;
       }
     }
-  }, [contentBlocksToContent, nestedContentMap]);
+  }, [contentBlocksToContent]);
 
   // --- Stream event handler ---
 
@@ -516,10 +525,11 @@ export function useClaudeSession() {
     (cwd: string, model?: string, mode?: PermissionMode, enable1m?: boolean, resume?: string) => {
       setMessages([]);
       setUsage({ ...emptyUsage });
-      nestedContentMap.clear();
+      nestedContentMapRef.current.clear();
+      setNestedContentVersion(0);
       emit("start_session", { cwd, model, permissionMode: mode, enable1mContext: enable1m, resume });
     },
-    [emit, nestedContentMap]
+    [emit]
   );
 
   const sendMessage = useCallback(
@@ -588,7 +598,8 @@ export function useClaudeSession() {
     error,
     gitStatus,
     maxThinkingTokens,
-    nestedContentMap,
+    nestedContentMap: nestedContentMapRef.current,
+    nestedContentVersion,
     startSession,
     sendMessage,
     respondPermission,
