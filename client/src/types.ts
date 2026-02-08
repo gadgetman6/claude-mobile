@@ -193,7 +193,17 @@ export type ServerMessage =
   | { type: "session_started"; sessionId: string }
   | { type: "session_ended"; reason: string }
   | { type: "session_state"; sessionId: string; cwd: string; model: string; permissionMode: string; isStreaming: boolean }
-  | { type: "session_history"; messages: Array<any> };
+  | { type: "session_history"; messages: HistoryEntry[] };
+
+export type HistoryEntry =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: HistoryContentPart[] }
+  | { role: "system"; content: string };
+
+export type HistoryContentPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string };
 
 // Permission request for display
 export type PermissionRequest = {

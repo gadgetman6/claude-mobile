@@ -9,8 +9,20 @@ import type {
   SDKPartialMessage,
   SDKAssistantMessage,
   ContentBlock,
+  HistoryContentPart,
 } from "../types";
 import type { ThreadMessageLike } from "@assistant-ui/react";
+import type { ContentPart } from "./useClaudeRuntime";
+
+function historyToThreadContent(parts: HistoryContentPart[]): ThreadMessageLike["content"] {
+  const result: ThreadMessageLike["content"] & unknown[] = [];
+  for (const part of parts) {
+    if (part.type === "text") result.push({ type: "text" as const, text: part.text });
+    else if (part.type === "reasoning") result.push({ type: "reasoning" as const, text: part.text });
+    else result.push({ type: "tool-call" as const, toolCallId: part.toolCallId, toolName: part.toolName, args: part.args, result: part.result });
+  }
+  return result;
+}
 
 // --- Session persistence ---
 
@@ -126,7 +138,7 @@ export function useClaudeSession() {
           type: "tool-call" as const,
           toolCallId: b.id,
           toolName: b.name,
-          args: b.input as any,
+          args: b.input as Record<string, unknown>,
           argsText: b.inputJson,
           result: b.result,
         });
@@ -149,7 +161,7 @@ export function useClaudeSession() {
           type: "tool-call" as const,
           toolCallId: block.id,
           toolName: block.name,
-          args: block.input as any,
+          args: block.input as Record<string, unknown>,
           argsText: JSON.stringify(block.input, null, 2),
         });
       }
@@ -237,7 +249,7 @@ export function useClaudeSession() {
       }
 
       case "stream_event": {
-        const parentId = (msg as any).parent_tool_use_id as string | null;
+        const parentId = msg.parent_tool_use_id as string | null;
         if (parentId) {
           // Subagent stream event — skip main streaming, handled via assistant messages
           break;
@@ -420,18 +432,18 @@ export function useClaudeSession() {
         setGitStatus({ status: msg.status, diff: msg.diff, branch: msg.branch });
         break;
       case "session_history": {
-        // Convert server history entries to ThreadMessageLike[]
-        const entries = (msg as any).messages as Array<any>;
-        const converted: ThreadMessageLike[] = entries.map((entry: any) => {
+        const converted: ThreadMessageLike[] = msg.messages.map((entry): ThreadMessageLike => {
           if (entry.role === "user") {
-            return { role: "user" as const, content: entry.content };
+            return { role: "user", content: entry.content };
           }
           if (entry.role === "assistant") {
-            // content is already in the right shape: text/reasoning/tool-call parts
-            return { role: "assistant" as const, id: crypto.randomUUID(), content: entry.content };
+            return {
+              role: "assistant" as const,
+              id: crypto.randomUUID(),
+              content: historyToThreadContent(entry.content),
+            };
           }
-          // system
-          return { role: "system" as const, content: entry.content };
+          return { role: "system", content: entry.content };
         });
         setMessages(converted);
         break;
@@ -533,8 +545,20 @@ export function useClaudeSession() {
   );
 
   const sendMessage = useCallback(
-    (content: string) => {
-      setMessages((prev) => [...prev, { role: "user" as const, content }]);
+    (content: string | ContentPart[]) => {
+      if (typeof content === "string") {
+        setMessages((prev) => [...prev, { role: "user" as const, content }]);
+      } else {
+        // Content array with text + images — build display-friendly format
+        const displayContent: ThreadMessageLike["content"] & unknown[] = content.map((part) => {
+          if (part.type === "text") return { type: "text" as const, text: part.text };
+          if (part.type === "image") {
+            return { type: "image" as const, image: `data:${part.source.media_type};base64,${part.source.data}` };
+          }
+          return { type: "text" as const, text: "" };
+        });
+        setMessages((prev) => [...prev, { role: "user" as const, content: displayContent }]);
+      }
       emit("user_message", { content });
     },
     [emit]

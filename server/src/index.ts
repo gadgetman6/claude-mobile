@@ -5,7 +5,7 @@ import { Server as Engine } from "@socket.io/bun-engine";
 import { AgentSession } from "./agent.js";
 import { getGitStatus } from "./git.js";
 import { getVapidPublicKey, setSubscription, removeSubscription, sendPushNotification } from "./push.js";
-import type { ServerMessage, HistoryEntry, HistoryContentPart } from "./types.js";
+import type { ServerMessage, HistoryEntry, HistoryContentPart, ContentBlock } from "./types.js";
 import { parseTranscript } from "@constellos/claude-code-kit/transcripts";
 
 const PORT = parseInt(process.env.PORT ?? "3333");
@@ -376,7 +376,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("user_message", (data: { content: string }) => {
+  socket.on("user_message", (data: { content: string | ContentBlock[] }) => {
     if (!currentSession) {
       socket.emit("message", {
         type: "error",

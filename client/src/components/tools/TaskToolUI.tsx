@@ -3,6 +3,11 @@ import { makeAssistantToolUI } from "@assistant-ui/react";
 import { useClaudeSessionContext } from "@/hooks/useClaudeSession";
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
+type NestedContentPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string };
+
 type TaskArgs = {
   description?: string;
   prompt?: string;
@@ -29,7 +34,7 @@ export const TaskToolUI = makeAssistantToolUI<TaskArgs, string>({
 
     const toolCount = nested.reduce((count, msg) => {
       if (msg.role !== "assistant" || !Array.isArray(msg.content)) return count;
-      return count + (msg.content as any[]).filter((p: any) => p.type === "tool-call").length;
+      return count + (msg.content as NestedContentPart[]).filter((p) => p.type === "tool-call").length;
     }, 0);
 
     return (
@@ -92,10 +97,11 @@ export const TaskToolUI = makeAssistantToolUI<TaskArgs, string>({
 
 function NestedMessage({ message }: { message: ThreadMessageLike }) {
   if (message.role !== "assistant" || !Array.isArray(message.content)) return null;
+  const parts = message.content as NestedContentPart[];
 
   return (
     <>
-      {(message.content as any[]).map((part: any, i: number) => {
+      {parts.map((part, i) => {
         if (part.type === "text" && part.text) {
           return (
             <div key={i} className="text-sm text-foreground" style={{ fontSize: 12 }}>
@@ -116,6 +122,12 @@ function NestedMessage({ message }: { message: ThreadMessageLike }) {
           );
         }
         if (part.type === "tool-call") {
+          const args = part.args;
+          const command = args.command as string | undefined;
+          const description = args.description as string | undefined;
+          const filePath = args.file_path as string | undefined;
+          const pattern = args.pattern as string | undefined;
+          const searchPath = args.path as string | undefined;
           return (
             <div key={i} className="tool-block" style={{ fontSize: 12 }}>
               <div className="tool-header">
@@ -124,23 +136,23 @@ function NestedMessage({ message }: { message: ThreadMessageLike }) {
                   {part.result != null ? "done" : "running"}
                 </span>
               </div>
-              {part.toolName === "Bash" && part.args?.command && (
+              {part.toolName === "Bash" && command && (
                 <div className="tool-content">
-                  {part.args.description && <div className="bash-description">{part.args.description}</div>}
-                  <div className="bash-command">{part.args.command}</div>
+                  {description && <div className="bash-description">{description}</div>}
+                  <div className="bash-command">{command}</div>
                 </div>
               )}
-              {part.toolName === "Read" && part.args?.file_path && (
-                <div className="file-path">{part.args.file_path}</div>
+              {part.toolName === "Read" && filePath && (
+                <div className="file-path">{filePath}</div>
               )}
               {part.toolName === "Glob" && (
                 <div className="tool-content" style={{ color: "var(--text-secondary)" }}>
-                  {part.args?.pattern}{part.args?.path ? ` in ${part.args.path}` : ""}
+                  {pattern}{searchPath ? ` in ${searchPath}` : ""}
                 </div>
               )}
               {part.toolName === "Grep" && (
                 <div className="tool-content" style={{ color: "var(--text-secondary)" }}>
-                  /{part.args?.pattern}/{part.args?.path ? ` in ${part.args.path}` : ""}
+                  /{pattern}/{searchPath ? ` in ${searchPath}` : ""}
                 </div>
               )}
             </div>

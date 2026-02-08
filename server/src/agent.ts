@@ -324,7 +324,7 @@ export class AgentSession {
     });
   }
 
-  sendUserMessage(content: string) {
+  sendUserMessage(content: string | unknown[]) {
     if (!this.running) {
       this.send({ type: "error", message: "No active session" });
       return;

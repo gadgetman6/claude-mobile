@@ -39,6 +39,11 @@ export type HistoryContentPart =
   | { type: "reasoning"; text: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string };
 
+// Content blocks for user messages (text + images)
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
 export type TokenUsage = {
   inputTokens: number;
   outputTokens: number;

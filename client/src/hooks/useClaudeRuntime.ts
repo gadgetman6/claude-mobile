@@ -1,12 +1,40 @@
 import { useExternalStoreRuntime } from "@assistant-ui/react";
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
 type ClaudeRuntimeOptions = {
   messages: ThreadMessageLike[];
   isRunning: boolean;
-  onNew: (content: string) => void;
+  onNew: (content: string | ContentPart[]) => void;
   onCancel: () => void;
 };
+
+async function compressImage(file: File, maxDim = 1568, quality = 0.85): Promise<{ base64: string; mediaType: string }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+      // Scale down if larger than maxDim
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      const base64 = dataUrl.split(",")[1];
+      resolve({ base64, mediaType: "image/jpeg" });
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
 
 export function useClaudeRuntime({ messages, isRunning, onNew, onCancel }: ClaudeRuntimeOptions) {
   return useExternalStoreRuntime({
@@ -14,13 +42,51 @@ export function useClaudeRuntime({ messages, isRunning, onNew, onCancel }: Claud
     isRunning,
     convertMessage: (msg) => msg,
     onNew: async (message) => {
-      // Extract text from the message content
       if (message.role !== "user") return;
-      const text = message.content
+
+      const textParts = message.content
         .filter((p): p is { type: "text"; text: string } => p.type === "text")
         .map((p) => p.text)
         .join("\n");
-      if (text) onNew(text);
+
+      // Check for image attachments
+      const imageParts = message.content.filter((p) => p.type === "image");
+
+      if (imageParts.length === 0) {
+        if (textParts) onNew(textParts);
+        return;
+      }
+
+      // Build content array with text + images
+      const contentArray: ContentPart[] = [];
+      if (textParts) {
+        contentArray.push({ type: "text", text: textParts });
+      }
+      for (const part of imageParts) {
+        const imageVal = (part as unknown as { image: string | File }).image;
+        let base64: string;
+        let mediaType: string;
+        if (imageVal instanceof File) {
+          const compressed = await compressImage(imageVal);
+          base64 = compressed.base64;
+          mediaType = compressed.mediaType;
+        } else if (typeof imageVal === "string" && imageVal.startsWith("data:")) {
+          const match = imageVal.match(/^data:(.*?);base64,(.*)$/);
+          if (match) {
+            mediaType = match[1];
+            base64 = match[2];
+          } else continue;
+        } else if (typeof imageVal === "string") {
+          // URL string - skip, we only handle base64
+          continue;
+        } else continue;
+
+        contentArray.push({
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: base64 },
+        });
+      }
+      onNew(contentArray.length === 1 && contentArray[0].type === "text" ? textParts : contentArray);
     },
     onCancel: async () => {
       onCancel();
