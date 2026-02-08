@@ -10,6 +10,7 @@ import { AgentSession } from "./agent.js";
 import { CodexSession } from "./agent-codex.js";
 import { getGitStatus } from "./git.js";
 import { getVapidPublicKey, setSubscription, removeSubscription, sendPushNotification } from "./push.js";
+import { setAPNsDeviceToken, sendAPNsNotification } from "./push-apns.js";
 import type { ServerMessage, HistoryEntry, HistoryContentPart, ContentBlock } from "./types.js";
 import { parseTranscript } from "@constellos/claude-code-kit/transcripts";
 import { execFile } from "child_process";
@@ -240,15 +241,24 @@ app.get("/api/codex-sessions", async (c) => {
                         );
                         if (textPart) {
                           firstMessage = textPart.text.slice(0, 100);
+                        } else {
+                          // Fallback: use any input_text content
+                          const anyText = content.find((c: any) => c.type === "input_text" && c.text);
+                          if (anyText && !firstMessage) {
+                            firstMessage = anyText.text.slice(0, 100);
+                          }
                         }
                       }
                     }
                   } catch { continue; }
                   if (id && firstMessage) break;
                 }
-                if (id && firstMessage) {
+                // Show sessions even without a user message (e.g., in-progress sessions)
+                if (id) {
                   sessions.push({
-                    id, timestamp, firstMessage, model,
+                    id, timestamp,
+                    firstMessage: firstMessage || "(session in progress)",
+                    model,
                     isRunning: currentProvider === "codex" && currentSessionId === id && currentSession != null,
                   });
                 }
@@ -302,6 +312,15 @@ app.post("/api/push/subscribe", async (c) => {
 app.post("/api/push/unsubscribe", async (c) => {
   removeSubscription();
   return c.json({ ok: true });
+});
+
+app.post("/api/push/register-apns", async (c) => {
+  const body = await c.req.json();
+  if (body.deviceToken) {
+    setAPNsDeviceToken(body.deviceToken);
+    return c.json({ ok: true });
+  }
+  return c.json({ ok: false, error: "No deviceToken provided" }, 400);
 });
 
 // Serve built client in production
@@ -380,11 +399,10 @@ function sendToClient(msg: ServerMessage) {
   if (msg.type === "permission_request") {
     const toolName = (msg as any).toolName ?? "tool";
     const dir = currentCwd?.split("/").pop() ?? "";
-    sendPushNotification(
-      dir ? `Claude · ${dir}` : "Claude needs your input",
-      `Permission: ${toolName}`,
-      { type: "permission_request", toolName }
-    );
+    const title = dir ? `Claude · ${dir}` : "Claude needs your input";
+    const body = `Permission: ${toolName}`;
+    sendPushNotification(title, body, { type: "permission_request", toolName });
+    sendAPNsNotification(title, body, { type: "permission_request", toolName });
   }
 
   if (msg.type === "sdk_message") {
@@ -409,11 +427,9 @@ function sendToClient(msg: ServerMessage) {
         dir,
         cost ? `$${cost.toFixed(4)}` : null,
       ].filter(Boolean).join(" · ");
-      sendPushNotification(
-        meta ? `Claude · ${meta}` : "Claude finished",
-        preview,
-        { type: "result" }
-      );
+      const resultTitle = meta ? `Claude · ${meta}` : "Claude finished";
+      sendPushNotification(resultTitle, preview, { type: "result" });
+      sendAPNsNotification(resultTitle, preview, { type: "result" });
       lastAssistantText = "";
     }
   }
@@ -645,6 +661,36 @@ io.on("connection", (socket) => {
       console.log("[socket.io] Starting session:", provider, cwd, data.model, data.resume ? `(resume: ${data.resume})` : "(new)");
       currentCwd = cwd;
       currentProvider = provider;
+
+      // If resuming the already-running session, re-attach instead of destroying it
+      if (data.resume && data.resume === currentSessionId && currentSession?.isRunning) {
+        console.log("[socket.io] Re-attaching to running session:", currentSessionId, `(${messageCache.length} cached messages)`);
+        socket.emit("message", { type: "session_state",
+          sessionId: currentSessionId,
+          cwd: currentCwd,
+          model: currentModel,
+          permissionMode: currentPermissionMode,
+          isStreaming: currentSession.isStreaming,
+        } satisfies ServerMessage);
+        // Replay cached messages so the client sees full history
+        // Mark user messages as replay so the iOS client renders them
+        for (const msg of messageCache) {
+          if (msg.type === "sdk_message") {
+            const sdkMsg = msg.message as any;
+            if (sdkMsg?.type === "user" && !sdkMsg.parent_tool_use_id) {
+              socket.emit("message", { ...msg, message: { ...sdkMsg, isReplay: true } });
+              continue;
+            }
+          }
+          socket.emit("message", msg);
+        }
+        socket.emit("message", {
+          type: "token_usage",
+          usage: currentSession.currentUsage,
+        } satisfies ServerMessage);
+        return;
+      }
+
       if (currentSession) {
         currentSession.close();
         currentSession = null;

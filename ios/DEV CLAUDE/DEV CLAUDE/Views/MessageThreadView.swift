@@ -5,9 +5,9 @@ import Textual
 struct MessageThreadView: View {
     @Environment(SessionStore.self) private var sessionStore
 
-    private let pageSize = 40
+    private let pageSize = 20
 
-    @State private var visibleCount = 40
+    @State private var visibleCount = 20
     /// When true, new messages auto-scroll to bottom. Disabled when user scrolls up.
     @State private var autoScroll = true
 
@@ -18,7 +18,7 @@ struct MessageThreadView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 4) {
+                VStack(spacing: 4) {
                     if sessionStore.messages.isEmpty {
                         welcomeView
                     } else {
@@ -30,15 +30,12 @@ struct MessageThreadView: View {
                             MessageCell(message: message)
                         }
                     }
-
-                    // Bottom anchor
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom")
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom)
             .onScrollPhaseChange { _, newPhase in
+                // Only disable autoScroll when user actively drags the scroll view
                 if newPhase == .interacting {
                     autoScroll = false
                 }
@@ -50,11 +47,17 @@ struct MessageThreadView: View {
                 if delta > pageSize || oldCount == 0 {
                     visibleCount = min(pageSize, newCount)
                     autoScroll = true
-                    scrollToBottom(proxy: proxy, delay: 0.15)
                 } else if delta > 0 {
                     visibleCount = max(visibleCount, newCount)
+
+                    // Always re-enable autoScroll when the user sends a message
+                    let lastMsg = sessionStore.messages.last
+                    if lastMsg?.role == .user {
+                        autoScroll = true
+                    }
+
                     if autoScroll {
-                        scrollToBottom(proxy: proxy, delay: 0.05)
+                        scrollToLastMessage(proxy: proxy)
                     }
                 } else if delta < 0 {
                     visibleCount = pageSize
@@ -68,11 +71,13 @@ struct MessageThreadView: View {
 
     // MARK: - Helpers
 
-    private func scrollToBottom(proxy: ScrollViewProxy, delay: Double) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            withAnimation(.easeOut(duration: 0.15)) {
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
+    /// Scrolls to the last visible message. Using the message ID (a real rendered item)
+    /// instead of a separate empty anchor avoids the black-screen issue with LazyVStack,
+    /// since scrolling to a message forces its neighbors to be laid out.
+    private func scrollToLastMessage(proxy: ScrollViewProxy) {
+        guard let lastId = sessionStore.messages.last?.id else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            proxy.scrollTo(lastId, anchor: .bottom)
         }
     }
 
@@ -96,7 +101,7 @@ struct MessageThreadView: View {
     private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
         Button {
             autoScroll = true
-            scrollToBottom(proxy: proxy, delay: 0.05)
+            scrollToLastMessage(proxy: proxy)
         } label: {
             Image(systemName: "chevron.down")
                 .font(.body.bold())

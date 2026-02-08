@@ -121,7 +121,7 @@ export async function sendAPNsNotification(
       if (responseStatus === 200) {
         console.log("[apns] Notification sent:", title);
       } else {
-        console.error("[apns] Failed:", responseStatus, responseData);
+        console.error("[apns] Failed:", responseStatus, responseData, "host:", APNS_HOST, "topic:", APNS_TOPIC, "token:", deviceToken?.slice(0, 8));
         if (responseStatus === 410) {
           // Token is no longer valid
           deviceToken = null;

@@ -108,7 +108,7 @@ struct UnifiedDiffView: View {
     }
 }
 
-/// Full-screen diff detail view with syntax-highlighted diff rendering.
+/// Full-screen diff detail view with syntax highlighting.
 struct DiffDetailView: View {
     let filePath: String
     let oldString: String
@@ -118,35 +118,11 @@ struct DiffDetailView: View {
         URL(fileURLWithPath: filePath).lastPathComponent
     }
 
-    private var diffLines: [DiffLine] {
-        UnifiedDiffView.computeDiff(old: oldString, new: newString)
-    }
-
-    /// Convert diff lines into a diff-formatted string for syntax highlighting.
-    private var diffCodeBlock: String {
-        let lines = diffLines
-        if lines.isEmpty { return "" }
-        return lines.map { line in
-            switch line.type {
-            case .addition: return "+\(line.text)"
-            case .deletion: return "-\(line.text)"
-            case .context: return " \(line.text)"
-            case .hunk: return line.text
-            }
-        }.joined(separator: "\n")
-    }
-
     var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            if diffLines.isEmpty {
-                Text("No changes")
-                    .foregroundStyle(.secondary)
-                    .padding()
-            } else {
-                CodePreviewView(code: diffCodeBlock, language: "diff")
-                    .padding(8)
-            }
-        }
+        DiffCodeView(
+            filePath: filePath,
+            lines: UnifiedDiffView.computeDiff(old: oldString, new: newString)
+        )
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -161,31 +137,29 @@ struct UnifiedDiffDetailView: View {
         URL(fileURLWithPath: filePath).lastPathComponent
     }
 
-    private var diffCodeBlock: String {
-        if lines.isEmpty { return "" }
-        return lines.map { line in
-            switch line.type {
-            case .addition: return "+\(line.text)"
-            case .deletion: return "-\(line.text)"
-            case .context: return " \(line.text)"
-            case .hunk: return line.text
-            }
-        }.joined(separator: "\n")
+    var body: some View {
+        DiffCodeView(filePath: filePath, lines: lines)
+            .navigationTitle(fileName)
+            .navigationBarTitleDisplayMode(.inline)
     }
+}
+
+/// Renders diff with colored line-by-line rows inside a scrollable container.
+private struct DiffCodeView: View {
+    let filePath: String
+    let lines: [DiffLine]
 
     var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            if lines.isEmpty {
-                Text("No changes")
-                    .foregroundStyle(.secondary)
-                    .padding()
-            } else {
-                CodePreviewView(code: diffCodeBlock, language: "diff")
-                    .padding(8)
+        if lines.isEmpty {
+            Text("No changes")
+                .foregroundStyle(.secondary)
+                .padding()
+        } else {
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                UnifiedDiffView(filePath: filePath, lines: lines)
+                    .padding(.vertical, 4)
             }
         }
-        .navigationTitle(fileName)
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
