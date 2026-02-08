@@ -31,9 +31,16 @@ const diffStyles = {
     },
   },
   diffContainer: {
+    tableLayout: "auto",
+    width: "auto",
+    minWidth: "100%",
     "& pre": {
       whiteSpace: "pre",
     },
+  },
+  lineContent: {
+    overflow: "visible",
+    width: "auto",
   },
   contentText: {
     fontSize: "12px",
