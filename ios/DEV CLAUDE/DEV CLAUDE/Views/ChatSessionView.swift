@@ -7,6 +7,7 @@ struct ChatSessionView: View {
     @Environment(SessionStore.self) private var sessionStore
     @State private var showSettings = false
     @State private var showGit = false
+    @State private var pulseOn = false
 
     private var permBadge: (label: String, color: Color) {
         switch sessionStore.permissionMode {
@@ -100,15 +101,30 @@ struct ChatSessionView: View {
                 Circle()
                     .fill(sessionStore.connectionState == .connected ? .green : .orange)
                     .frame(width: 8, height: 8)
+                    .opacity(sessionStore.isStreaming ? (pulseOn ? 0.3 : 1) : 1)
+                    .animation(sessionStore.isStreaming ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) : .default, value: pulseOn)
+                    .onChange(of: sessionStore.isStreaming) { _, streaming in
+                        pulseOn = streaming
+                    }
                 Text(server.alias)
                     .font(.headline)
-                Text(permBadge.label)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(permBadge.color.opacity(0.2))
-                    .foregroundStyle(permBadge.color)
-                    .clipShape(Capsule())
+                if sessionStore.isStreaming {
+                    Text("responding")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.2))
+                        .foregroundStyle(.green)
+                        .clipShape(Capsule())
+                } else {
+                    Text(permBadge.label)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(permBadge.color.opacity(0.2))
+                        .foregroundStyle(permBadge.color)
+                        .clipShape(Capsule())
+                }
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
