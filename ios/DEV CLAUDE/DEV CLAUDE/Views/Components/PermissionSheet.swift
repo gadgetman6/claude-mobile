@@ -5,7 +5,9 @@ struct PermissionOverlay: View {
     @Environment(SessionStore.self) private var sessionStore
 
     var body: some View {
-        if let perm = sessionStore.pendingPermission {
+        if let perm = sessionStore.pendingPermission,
+           perm.toolName != "ExitPlanMode" && perm.toolName != "EnterPlanMode" {
+            // ExitPlanMode/EnterPlanMode are handled inline by PlanModeToolCard
             ZStack {
                 Color.black.opacity(0.5)
                     .ignoresSafeArea()
@@ -18,7 +20,6 @@ struct PermissionOverlay: View {
             }
             .transition(.opacity)
             .onAppear {
-                // Haptic feedback when permission is requested
                 let impact = UIImpactFeedbackGenerator(style: .heavy)
                 impact.impactOccurred()
             }

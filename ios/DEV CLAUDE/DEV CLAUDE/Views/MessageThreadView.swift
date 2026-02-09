@@ -23,34 +23,37 @@ struct MessageThreadView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 4) {
-                ForEach(Array(sessionStore.messages.reversed().enumerated()), id: \.element.id) { reversedIdx, message in
-                        let actualIndex = sessionStore.messages.count - 1 - reversedIdx
-                        let prevMessage: DisplayMessage? = actualIndex > 0 ? sessionStore.messages[actualIndex - 1] : nil
-                        let showTimestamp = shouldShowTimestamp(for: message, previous: prevMessage)
+                // Avoid allocating/copying a reversed array of messages on every render.
+                ForEach(sessionStore.messages.indices.reversed(), id: \.self) { idx in
+                    let message = sessionStore.messages[idx]
+                    let prevMessage: DisplayMessage? = idx > 0 ? sessionStore.messages[idx - 1] : nil
+                    let showTimestamp = shouldShowTimestamp(for: message, previous: prevMessage)
 
-                        VStack(spacing: 4) {
-                            MessageCell(message: message)
+                    VStack(spacing: 4) {
+                        MessageCell(message: message)
 
-                            if showTimestamp {
-                                Text(formatTimestamp(message.timestamp))
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.vertical, 6)
-                            }
-                        }
-                        .rotationEffect(.degrees(180))
-                        .scaleEffect(x: -1, y: 1, anchor: .center)
-                        .onAppear {
-                            if topVisibleIndex == nil || actualIndex < topVisibleIndex! {
-                                topVisibleIndex = actualIndex
-                            }
-                        }
-                        .onDisappear {
-                            if topVisibleIndex == actualIndex {
-                                topVisibleIndex = nil
-                            }
+                        if showTimestamp {
+                            Text(formatTimestamp(message.timestamp))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .padding(.vertical, 6)
                         }
                     }
+                    // `scrollPosition(id:)` targets view ids; keep this aligned with `DisplayMessage.id`.
+                    .id(message.id)
+                    .rotationEffect(.degrees(180))
+                    .scaleEffect(x: -1, y: 1, anchor: .center)
+                    .onAppear {
+                        if topVisibleIndex == nil || idx < topVisibleIndex! {
+                            topVisibleIndex = idx
+                        }
+                    }
+                    .onDisappear {
+                        if topVisibleIndex == idx {
+                            topVisibleIndex = nil
+                        }
+                    }
+                }
                 }
             }
         .rotationEffect(.degrees(180))
@@ -209,10 +212,10 @@ struct MessageCell: View {
         switch part {
         case .text(let text):
             if !text.isEmpty {
-                SafeMarkdownView(text: text)
+                SafeMarkdownView(text: text, isStreaming: message.status == .running)
             }
         case .reasoning(let text):
-            ThinkingBlockView(text: text)
+            ThinkingBlockView(text: text, isStreaming: message.status == .running)
         case .toolCall(let tc):
             ToolCardView(toolCall: tc)
         case .image(let data):
@@ -246,16 +249,51 @@ struct MessageCell: View {
 
 /// Uses StructuredText for complete markdown, plain Text for mid-stream partials.
 struct SafeMarkdownView: View {
+    enum RenderMode {
+        /// Render StructuredText when the content looks complete; otherwise fall back to plain Text.
+        case auto
+        /// Always render as plain Text (fast path for very large documents).
+        case plainText
+        /// Always render as StructuredText (expensive for large documents).
+        case structuredText
+    }
+
     let text: String
+    var isStreaming: Bool = false
+    var enableSelection: Bool = true
+    var renderMode: RenderMode = .auto
 
     var body: some View {
-        if isLikelyCompleteMarkdown {
-            StructuredText(markdown: text)
-                .textual.structuredTextStyle(.gitHub)
-                .textual.textSelection(.enabled)
+        if shouldRenderStructuredText {
+            if enableSelection {
+                StructuredText(markdown: text)
+                    .textual.structuredTextStyle(.gitHub)
+                    .textual.textSelection(.enabled)
+            } else {
+                StructuredText(markdown: text)
+                    .textual.structuredTextStyle(.gitHub)
+                    .textual.textSelection(.disabled)
+            }
         } else {
-            Text(text)
-                .textSelection(.enabled)
+            if enableSelection {
+                Text(text)
+                    .textSelection(.enabled)
+            } else {
+                Text(text)
+                    .textSelection(.disabled)
+            }
+        }
+    }
+
+    private var shouldRenderStructuredText: Bool {
+        guard !isStreaming else { return false }
+        switch renderMode {
+        case .plainText:
+            return false
+        case .structuredText:
+            return true
+        case .auto:
+            return isLikelyCompleteMarkdown
         }
     }
 
@@ -269,6 +307,7 @@ struct SafeMarkdownView: View {
 
 struct ThinkingBlockView: View {
     let text: String
+    var isStreaming: Bool = false
     @State private var isExpanded = true
 
     private var preview: String {
@@ -278,7 +317,7 @@ struct ThinkingBlockView: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            SafeMarkdownView(text: text)
+            SafeMarkdownView(text: text, isStreaming: isStreaming)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
@@ -332,6 +371,8 @@ struct ToolCardView: View {
             return "TodoWrite"
         case "WebSearch":
             return "WebSearch"
+        case "ExitPlanMode", "EnterPlanMode":
+            return "PlanMode"
         default:
             return toolCall.toolName
         }
@@ -353,6 +394,8 @@ struct ToolCardView: View {
             TaskToolCard(toolCall: toolCall)
         case "TodoWrite":
             TodoToolCard(toolCall: toolCall)
+        case "PlanMode":
+            PlanModeToolCard(toolCall: toolCall)
         default:
             GenericToolCard(toolCall: toolCall)
         }

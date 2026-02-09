@@ -80,14 +80,28 @@ app.get("/api/git-diff", async (c) => {
 
 // List recent sessions for a given cwd
 app.get("/api/sessions", async (c) => {
-  const cwd = c.req.query("cwd") ?? "/home/debian";
+  const rawCwd = c.req.query("cwd");
+  const cwd = rawCwd && rawCwd.trim() ? rawCwd.trim() : (process.env.HOME ?? "/home/debian");
   const homeDir = process.env.HOME ?? "/home/debian";
   const projectKey = cwd.replace(/\//g, "-");
   const sessionsDir = `${homeDir}/.claude/projects/${projectKey}`;
 
+  console.log(`[sessions] cwd=${cwd} projectKey=${projectKey} sessionsDir=${sessionsDir}`);
+
   try {
     const files = await readdir(sessionsDir);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+    console.log(`[sessions] Found ${jsonlFiles.length} session files`);
+
+    // Sort by modification time (newest first) and take top 20
+    const withStats = await Promise.all(
+      jsonlFiles.map(async (f) => {
+        const s = await stat(`${sessionsDir}/${f}`);
+        return { file: f, mtime: s.mtimeMs };
+      })
+    );
+    withStats.sort((a, b) => b.mtime - a.mtime);
+    const recentFiles = withStats.slice(0, 20).map((s) => s.file);
 
     type SessionInfo = {
       id: string;
@@ -101,7 +115,7 @@ app.get("/api/sessions", async (c) => {
 
     const sessions: SessionInfo[] = [];
 
-    for (const file of jsonlFiles.slice(-20)) {
+    for (const file of recentFiles) {
       try {
         const id = file.replace(".jsonl", "");
         const filePath = `${sessionsDir}/${file}`;
@@ -183,8 +197,21 @@ app.get("/api/sessions", async (c) => {
 
     sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return c.json(sessions.slice(0, 10));
-  } catch {
+  } catch (err) {
+    console.log(`[sessions] Error reading sessions dir: ${err}`);
     return c.json([]);
+  }
+});
+
+// Debug: list all known project directories
+app.get("/api/debug/projects", async (c) => {
+  const homeDir = process.env.HOME ?? "/home/debian";
+  const projectsDir = `${homeDir}/.claude/projects`;
+  try {
+    const dirs = await readdir(projectsDir);
+    return c.json({ homeDir, projectsDir, directories: dirs });
+  } catch (err) {
+    return c.json({ homeDir, projectsDir, error: String(err) });
   }
 });
 

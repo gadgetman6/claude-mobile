@@ -13,6 +13,8 @@ final class SessionStore {
     }
 
     var connectionState: ConnectionState = .disconnected
+    /// Tracks which saved server we're connected to (for correct server switching).
+    var connectedServerId: UUID?
 
     // MARK: - Session
 
@@ -65,6 +67,7 @@ final class SessionStore {
 
     func connect(to server: Server) {
         // Set connecting immediately so the UI updates before the async callback
+        connectedServerId = server.id
         connectionState = .connecting
         error = nil
 
@@ -90,6 +93,34 @@ final class SessionStore {
     func disconnect() {
         socketService.disconnect()
         connectionState = .disconnected
+        connectedServerId = nil
+    }
+
+    /// Switch to a different backend server: disconnect, reset session UI state, then connect.
+    func switchServer(to server: Server) {
+        // Always disconnect first to avoid emitting events to the wrong backend.
+        disconnect()
+
+        // Clear per-session UI state so we don't mix content across servers.
+        sessionId = nil
+        error = nil
+        isStreaming = false
+        isCompacting = false
+        currentModel = ""
+        permissionMode = "default"
+        // Keep maxThinkingTokens as-is; it will be reconciled when the server sends session_state.
+        messages = []
+        usage = TokenUsage()
+        models = []
+        pendingPermission = nil
+        gitStatus = nil
+        nestedContentMap = [:]
+
+        streamingBlocks = []
+        streamingUuid = ""
+        partialJson = [:]
+
+        connect(to: server)
     }
 
     // MARK: - Actions

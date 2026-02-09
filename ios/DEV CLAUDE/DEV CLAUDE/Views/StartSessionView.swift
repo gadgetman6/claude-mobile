@@ -33,10 +33,19 @@ struct StartSessionView: View {
                 serverManager.selectServer(server)
                 notificationManager.setServer(server.baseURL)
                 loadCwd()
-                if sessionStore.connectionState == .disconnected {
+                // Ensure the Socket.IO connection actually targets the selected server.
+                if sessionStore.connectedServerId != server.id {
+                    sessionStore.switchServer(to: server)
+                } else if sessionStore.connectionState == .disconnected {
                     sessionStore.connect(to: server)
                 }
                 Task { await loadRecentSessions() }
+            }
+            .onChange(of: inSession) { _, isActive in
+                // Reload sessions when returning from chat
+                if !isActive {
+                    Task { await loadRecentSessions() }
+                }
             }
     }
 
@@ -283,7 +292,9 @@ struct StartSessionView: View {
             let (data, _) = try await URLSession.shared.data(from: url)
             let decoded = try JSONDecoder().decode([RecentSession].self, from: data)
             await MainActor.run { recentSessions = decoded }
-        } catch { /* ignore */ }
+        } catch {
+            print("[sessions] Failed to load: \(error)")
+        }
     }
 }
 
