@@ -14,6 +14,7 @@ dist/
 *.crt
 *.crt.bak
 *.key.bak
+*.p8
 
 # Xcode - User data
 xcuserdata/

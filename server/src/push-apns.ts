@@ -1,16 +1,12 @@
 import { readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import { sign } from "crypto";
 import http2 from "http2";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 // APNs configuration
-const APNS_KEY_ID = process.env.APNS_KEY_ID ?? "UA6TQ9YD6J";
-const APNS_TEAM_ID = process.env.APNS_TEAM_ID ?? "X53TFTT984";
-const APNS_KEY_PATH = process.env.APNS_KEY_PATH ?? join(__dirname, "../AuthKey_UA6TQ9YD6J.p8");
-const APNS_TOPIC = process.env.APNS_TOPIC ?? "sohan.DEV-CLAUDE";
+const APNS_KEY_ID = process.env.APNS_KEY_ID;
+const APNS_TEAM_ID = process.env.APNS_TEAM_ID;
+const APNS_KEY_PATH = process.env.APNS_KEY_PATH;
+const APNS_TOPIC = process.env.APNS_TOPIC;
 // Use sandbox for development, production for release
 const APNS_HOST = process.env.APNS_PRODUCTION === "true"
   ? "api.push.apple.com"
@@ -22,6 +18,14 @@ let deviceToken: string | null = null;
 // Load the .p8 key
 async function loadKey(): Promise<string | null> {
   if (apnsKey) return apnsKey;
+  if (!APNS_KEY_PATH) {
+    console.warn("[apns] APNS_KEY_PATH not set — APNs disabled");
+    return null;
+  }
+  if (!APNS_KEY_ID || !APNS_TEAM_ID || !APNS_TOPIC) {
+    console.warn("[apns] Missing APNS_KEY_ID/APNS_TEAM_ID/APNS_TOPIC — APNs disabled");
+    return null;
+  }
   try {
     apnsKey = await readFile(APNS_KEY_PATH, "utf-8");
     console.log("[apns] Loaded APNs key from", APNS_KEY_PATH);
@@ -33,15 +37,15 @@ async function loadKey(): Promise<string | null> {
 }
 
 // Generate JWT for APNs
-function generateJWT(key: string): string {
+function generateJWT(key: string, keyId: string, teamId: string): string {
   const header = Buffer.from(JSON.stringify({
     alg: "ES256",
-    kid: APNS_KEY_ID,
+    kid: keyId,
   })).toString("base64url");
 
   const now = Math.floor(Date.now() / 1000);
   const claims = Buffer.from(JSON.stringify({
-    iss: APNS_TEAM_ID,
+    iss: teamId,
     iat: now,
   })).toString("base64url");
 
@@ -71,11 +75,12 @@ export async function sendAPNsNotification(
   data?: Record<string, unknown>
 ) {
   if (!deviceToken) return;
+  if (!APNS_KEY_ID || !APNS_TEAM_ID || !APNS_TOPIC) return;
 
   const key = await loadKey();
   if (!key) return;
 
-  const jwt = generateJWT(key);
+  const jwt = generateJWT(key, APNS_KEY_ID, APNS_TEAM_ID);
 
   const payload = JSON.stringify({
     aps: {
@@ -142,6 +147,3 @@ export async function sendAPNsNotification(
     req.end();
   });
 }
-
-// Initialize on import
-loadKey();
