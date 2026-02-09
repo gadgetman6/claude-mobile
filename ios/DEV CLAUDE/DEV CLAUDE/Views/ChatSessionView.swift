@@ -108,23 +108,13 @@ struct ChatSessionView: View {
                     }
                 Text(server.alias)
                     .font(.headline)
-                if sessionStore.isStreaming {
-                    Text("responding")
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.green.opacity(0.2))
-                        .foregroundStyle(.green)
-                        .clipShape(Capsule())
-                } else {
-                    Text(permBadge.label)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(permBadge.color.opacity(0.2))
-                        .foregroundStyle(permBadge.color)
-                        .clipShape(Capsule())
-                }
+                Text(permBadge.label)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(permBadge.color.opacity(0.2))
+                    .foregroundStyle(permBadge.color)
+                    .clipShape(Capsule())
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
