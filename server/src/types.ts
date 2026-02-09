@@ -29,7 +29,7 @@ export type ServerMessage =
   | { type: "error"; message: string }
   | { type: "session_started"; sessionId: string }
   | { type: "session_ended"; reason: string }
-  | { type: "session_state"; sessionId: string; cwd: string; model: string; permissionMode: string; isStreaming: boolean }
+  | { type: "session_state"; sessionId: string; cwd: string; model: string; permissionMode: string; isStreaming: boolean; maxThinkingTokens?: number | null }
   | { type: "session_history"; messages: HistoryEntry[] };
 
 // Assembled conversation messages for reconnect replay

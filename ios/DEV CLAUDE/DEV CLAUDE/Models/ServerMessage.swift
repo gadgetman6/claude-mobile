@@ -15,6 +15,7 @@ enum ServerMessage {
     case sessionEnded(String)      // reason
     case sessionState(SessionStatePayload)
     case sessionHistory([HistoryEntry])
+    case thinkingTokensUpdated(Int?)
     case unknown(String)
 }
 
@@ -87,7 +88,8 @@ extension ServerMessage {
                 cwd: dict["cwd"] as? String ?? "",
                 model: dict["model"] as? String ?? "",
                 permissionMode: dict["permissionMode"] as? String ?? "default",
-                isStreaming: dict["isStreaming"] as? Bool ?? false
+                isStreaming: dict["isStreaming"] as? Bool ?? false,
+                maxThinkingTokens: dict["maxThinkingTokens"] as? Int
             )
             return .sessionState(payload)
 
@@ -97,6 +99,9 @@ extension ServerMessage {
                 return .sessionHistory(entries)
             }
             return .sessionHistory([])
+
+        case "thinking_tokens_updated":
+            return .thinkingTokensUpdated(dict["tokens"] as? Int)
 
         default:
             return .unknown(type)
@@ -327,6 +332,7 @@ struct SessionStatePayload {
     let model: String
     let permissionMode: String
     let isStreaming: Bool
+    let maxThinkingTokens: Int?
 }
 
 // MARK: - History Entries (for session replay)

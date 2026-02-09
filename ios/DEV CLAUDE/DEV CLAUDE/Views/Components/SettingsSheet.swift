@@ -69,26 +69,24 @@ struct SettingsSheet: View {
     private var thinkingSection: some View {
         Section("Reasoning Effort") {
             ForEach(Array(thinkingPresets.enumerated()), id: \.offset) { _, preset in
-                Button {
-                    sessionStore.changeThinkingTokens(preset.value)
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(preset.label)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-                            Text(preset.desc)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if sessionStore.maxThinkingTokens == preset.value {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
-                        }
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(preset.label)
+                            .font(.subheadline.bold())
+                        Text(preset.desc)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if sessionStore.maxThinkingTokens == preset.value {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.blue)
                     }
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    sessionStore.changeThinkingTokens(preset.value)
+                }
             }
         }
     }
@@ -96,26 +94,24 @@ struct SettingsSheet: View {
     private var permissionSection: some View {
         Section("Permission Mode") {
             ForEach(Array(permModes.enumerated()), id: \.offset) { _, pm in
-                Button {
-                    sessionStore.changePermissionMode(pm.value)
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(pm.label)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-                            Text(pm.desc)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if sessionStore.permissionMode == pm.value {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.blue)
-                        }
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(pm.label)
+                            .font(.subheadline.bold())
+                        Text(pm.desc)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if sessionStore.permissionMode == pm.value {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.blue)
                     }
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    sessionStore.changePermissionMode(pm.value)
+                }
             }
         }
     }

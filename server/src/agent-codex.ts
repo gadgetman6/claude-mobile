@@ -417,6 +417,10 @@ export class CodexSession {
   async setPermissionMode(_mode: string) {}
   async setMaxThinkingTokens(_tokens: number | null) {}
 
+  get maxThinkingTokens(): number | null {
+    return null;
+  }
+
   async getModels() {
     return [
       { value: "gpt-5.3-codex", displayName: "GPT-5.3 Codex", description: "Latest Codex model" },

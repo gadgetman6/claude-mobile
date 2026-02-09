@@ -41,7 +41,7 @@ struct ChatSessionView: View {
 
             // Token usage bar
             if sessionStore.usage.currentContextTokens > 0 || sessionStore.usage.costUsd > 0 {
-                TokenUsageBarView(usage: sessionStore.usage)
+                TokenUsageBarView(usage: sessionStore.usage, thinkingTokens: sessionStore.maxThinkingTokens)
             }
 
             // Compacting indicator
@@ -144,6 +144,7 @@ struct ChatSessionView: View {
 
 struct TokenUsageBarView: View {
     let usage: TokenUsage
+    var thinkingTokens: Int?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -160,6 +161,10 @@ struct TokenUsageBarView: View {
                     .foregroundStyle(.orange)
             }
             Spacer()
+            if let t = thinkingTokens {
+                Label(formatTokens(t), systemImage: "brain")
+                    .foregroundStyle(.purple)
+            }
         }
         .font(.caption)
         .padding(.horizontal)

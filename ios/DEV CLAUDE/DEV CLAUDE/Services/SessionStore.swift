@@ -243,10 +243,19 @@ final class SessionStore {
             currentModel = payload.model
             permissionMode = payload.permissionMode
             isStreaming = payload.isStreaming
+            if let serverTokens = payload.maxThinkingTokens {
+                maxThinkingTokens = serverTokens
+            } else if let localTokens = maxThinkingTokens {
+                // Server lost the value (e.g. restart) — re-sync from client
+                socketService.emitSetThinkingTokens(localTokens)
+            }
 
         case .sessionHistory(let entries):
             let converted = entries.compactMap { historyEntryToDisplayMessage($0) }
             messages = converted
+
+        case .thinkingTokensUpdated(let tokens):
+            maxThinkingTokens = tokens
 
         case .unknown:
             break

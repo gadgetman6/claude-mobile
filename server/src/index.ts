@@ -614,6 +614,7 @@ io.on("connection", (socket) => {
         model: currentModel,
         permissionMode: currentPermissionMode,
         isStreaming: currentSession?.isStreaming ?? false,
+        maxThinkingTokens: currentSession?.maxThinkingTokens ?? null,
       } satisfies ServerMessage);
       for (const msg of messageCache) {
         socket.emit("message", msg);
@@ -671,6 +672,7 @@ io.on("connection", (socket) => {
           model: currentModel,
           permissionMode: currentPermissionMode,
           isStreaming: currentSession.isStreaming,
+          maxThinkingTokens: currentSession.maxThinkingTokens,
         } satisfies ServerMessage);
         // Replay cached messages so the client sees full history
         // Mark user messages as replay so the iOS client renders them
@@ -809,7 +811,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("set_thinking_tokens", async (data: { tokens: number | null }) => {
+    console.log("[socket.io] set_thinking_tokens:", data.tokens);
     await currentSession?.setMaxThinkingTokens(data.tokens);
+    // Confirm back to client
+    socket.emit("message", {
+      type: "thinking_tokens_updated",
+      tokens: data.tokens,
+    } as any);
   });
 
   socket.on("get_models", async () => {

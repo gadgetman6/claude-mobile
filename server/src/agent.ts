@@ -76,6 +76,7 @@ export class AgentSession {
   private sessionId: string | null = null;
   private running = false;
   private streaming = false;
+  private _maxThinkingTokens: number | null = null;
   private usage: TokenUsage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -410,6 +411,7 @@ export class AgentSession {
   }
 
   async setMaxThinkingTokens(tokens: number | null) {
+    this._maxThinkingTokens = tokens;
     if (this.queryInstance) {
       try {
         await this.queryInstance.setMaxThinkingTokens(tokens);
@@ -417,6 +419,10 @@ export class AgentSession {
         console.error("[agent] setMaxThinkingTokens error:", err);
       }
     }
+  }
+
+  get maxThinkingTokens(): number | null {
+    return this._maxThinkingTokens;
   }
 
   async getModels(): Promise<ModelInfo[]> {

@@ -181,8 +181,11 @@ final class SocketIOService {
 
     /// Change max thinking tokens.
     func emitSetThinkingTokens(_ tokens: Int?) {
-        let value: Any = tokens as Any
-        socket?.emit("set_thinking_tokens", ["tokens": value])
+        if let tokens {
+            socket?.emit("set_thinking_tokens", ["tokens": tokens])
+        } else {
+            socket?.emit("set_thinking_tokens", ["tokens": NSNull()])
+        }
     }
 
     /// Request the list of available models.
