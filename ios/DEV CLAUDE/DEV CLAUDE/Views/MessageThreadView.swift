@@ -23,12 +23,7 @@ struct MessageThreadView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 4) {
-                if sessionStore.messages.isEmpty {
-                    welcomeView
-                        .rotationEffect(.degrees(180))
-                        .scaleEffect(x: -1, y: 1, anchor: .center)
-                } else {
-                    ForEach(Array(sessionStore.messages.reversed().enumerated()), id: \.element.id) { reversedIdx, message in
+                ForEach(Array(sessionStore.messages.reversed().enumerated()), id: \.element.id) { reversedIdx, message in
                         let actualIndex = sessionStore.messages.count - 1 - reversedIdx
                         let prevMessage: DisplayMessage? = actualIndex > 0 ? sessionStore.messages[actualIndex - 1] : nil
                         let showTimestamp = shouldShowTimestamp(for: message, previous: prevMessage)
@@ -58,7 +53,6 @@ struct MessageThreadView: View {
                     }
                 }
             }
-        }
         .rotationEffect(.degrees(180))
         .scaleEffect(x: -1, y: 1, anchor: .center)
         .scrollDismissesKeyboard(.interactively)
@@ -154,19 +148,6 @@ struct MessageThreadView: View {
         .allowsHitTesting(!autoScroll)
     }
 
-    private var welcomeView: some View {
-        VStack(spacing: 8) {
-            Spacer(minLength: 100)
-            Text("Hello there!")
-                .font(.title.bold())
-            Text("How can I help you today?")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-    }
 }
 
 // MARK: - Message Cell (wraps in EquatableView to prevent unnecessary re-renders)
