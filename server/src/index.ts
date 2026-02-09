@@ -616,9 +616,17 @@ io.on("connection", (socket) => {
         isStreaming: currentSession?.isStreaming ?? false,
         maxThinkingTokens: currentSession?.maxThinkingTokens ?? null,
       } satisfies ServerMessage);
-      for (const msg of messageCache) {
-        socket.emit("message", msg);
-      }
+      // Load full session history from transcript file
+      try {
+        const homeDir = process.env.HOME ?? "/home/debian";
+        const projectKey = currentCwd.replace(/\//g, "-");
+        const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
+        const transcript = await parseTranscript(filePath);
+        const history = transcriptToHistory(transcript);
+        if (history.length > 0) {
+          socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
+        }
+      } catch {}
       if (currentSession) {
         socket.emit("message", {
           type: "token_usage",
@@ -674,18 +682,17 @@ io.on("connection", (socket) => {
           isStreaming: currentSession.isStreaming,
           maxThinkingTokens: currentSession.maxThinkingTokens,
         } satisfies ServerMessage);
-        // Replay cached messages so the client sees full history
-        // Mark user messages as replay so the iOS client renders them
-        for (const msg of messageCache) {
-          if (msg.type === "sdk_message") {
-            const sdkMsg = msg.message as any;
-            if (sdkMsg?.type === "user" && !sdkMsg.parent_tool_use_id) {
-              socket.emit("message", { ...msg, message: { ...sdkMsg, isReplay: true } });
-              continue;
-            }
+        // Load full session history from transcript file
+        try {
+          const homeDir = process.env.HOME ?? "/home/debian";
+          const projectKey = cwd.replace(/\//g, "-");
+          const filePath = `${homeDir}/.claude/projects/${projectKey}/${data.resume}.jsonl`;
+          const transcript = await parseTranscript(filePath);
+          const history = transcriptToHistory(transcript);
+          if (history.length > 0) {
+            socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
           }
-          socket.emit("message", msg);
-        }
+        } catch {}
         socket.emit("message", {
           type: "token_usage",
           usage: currentSession.currentUsage,

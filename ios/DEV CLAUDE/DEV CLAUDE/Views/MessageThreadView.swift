@@ -1,107 +1,76 @@
 import SwiftUI
 import Textual
 
-/// Scrollable message thread with pagination and floating scroll-to-bottom button.
+/// Scrollable message thread using inverted LazyVStack for reliable bottom-anchoring.
+///
+/// The ScrollView is rotated 180° so its "top" is visually at the bottom.
+/// Messages are displayed in reverse order (newest first), and each cell is
+/// rotated -180° to appear right-side up. This means LazyVStack eagerly
+/// renders items near the visual bottom (latest messages) — no black screen.
 struct MessageThreadView: View {
     @Environment(SessionStore.self) private var sessionStore
 
-    private let pageSize = 20
-
-    @State private var visibleCount = 20
-    /// When true, new messages auto-scroll to bottom. Disabled when user scrolls up.
+    /// When false, user has scrolled up — don't auto-scroll on new messages.
     @State private var autoScroll = true
-
-    private var hasMore: Bool {
-        sessionStore.messages.count > visibleCount
-    }
+    @State private var scrollTarget: String?
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 4) {
-                    if sessionStore.messages.isEmpty {
-                        welcomeView
-                    } else {
-                        if hasMore {
-                            loadMoreButton
-                        }
-
-                        ForEach(sessionStore.messages.suffix(visibleCount)) { message in
-                            MessageCell(message: message)
-                        }
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 4) {
+                if sessionStore.messages.isEmpty {
+                    welcomeView
+                        .rotationEffect(.degrees(180))
+                        .scaleEffect(x: -1, y: 1, anchor: .center)
+                } else {
+                    ForEach(sessionStore.messages.reversed()) { message in
+                        MessageCell(message: message)
+                            .rotationEffect(.degrees(180))
+                            .scaleEffect(x: -1, y: 1, anchor: .center)
                     }
                 }
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
-            .onScrollPhaseChange { _, newPhase in
-                // Only disable autoScroll when user actively drags the scroll view
-                if newPhase == .interacting {
-                    autoScroll = false
-                }
-            }
-            .onChange(of: sessionStore.messages.count) { oldCount, newCount in
-                guard newCount > 0 else { return }
-                let delta = newCount - oldCount
-
-                if delta > pageSize || oldCount == 0 {
-                    visibleCount = min(pageSize, newCount)
-                    autoScroll = true
-                } else if delta > 0 {
-                    visibleCount = max(visibleCount, newCount)
-
-                    // Always re-enable autoScroll when the user sends a message
-                    let lastMsg = sessionStore.messages.last
-                    if lastMsg?.role == .user {
-                        autoScroll = true
-                    }
-
-                    if autoScroll {
-                        scrollToLastMessage(proxy: proxy)
-                    }
-                } else if delta < 0 {
-                    visibleCount = pageSize
-                }
-            }
-            .overlay(alignment: .bottom) {
-                scrollToBottomButton(proxy: proxy)
             }
         }
-    }
+        .rotationEffect(.degrees(180))
+        .scaleEffect(x: -1, y: 1, anchor: .center)
+        .scrollDismissesKeyboard(.interactively)
+        .scrollPosition(id: $scrollTarget, anchor: .top)
+        .onScrollPhaseChange { _, newPhase in
+            if newPhase == .interacting {
+                autoScroll = false
+                scrollTarget = nil
+            }
+        }
+        .onChange(of: sessionStore.messages.count) { oldCount, newCount in
+            guard newCount > 0 else { return }
 
-    // MARK: - Helpers
+            if let lastMsg = sessionStore.messages.last, lastMsg.role == .user {
+                autoScroll = true
+            }
 
-    /// Scrolls to the last visible message. Using the message ID (a real rendered item)
-    /// instead of a separate empty anchor avoids the black-screen issue with LazyVStack,
-    /// since scrolling to a message forces its neighbors to be laid out.
-    private func scrollToLastMessage(proxy: ScrollViewProxy) {
-        guard let lastId = sessionStore.messages.last?.id else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            proxy.scrollTo(lastId, anchor: .bottom)
+            if newCount - oldCount > 5 || oldCount == 0 {
+                autoScroll = true
+            }
+
+            if autoScroll {
+                scrollTarget = sessionStore.messages.last?.id
+            }
+        }
+        .onChange(of: sessionStore.messages.last?.content.count) { _, _ in
+            if autoScroll {
+                scrollTarget = sessionStore.messages.last?.id
+            }
+        }
+        .overlay(alignment: .bottom) {
+            scrollToBottomButton
         }
     }
 
     // MARK: - Subviews
 
-    private var loadMoreButton: some View {
-        Button {
-            visibleCount = min(visibleCount + pageSize, sessionStore.messages.count)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.circle")
-                Text("Load earlier messages")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
-        }
-    }
-
-    private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
+    private var scrollToBottomButton: some View {
         Button {
             autoScroll = true
-            scrollToLastMessage(proxy: proxy)
+            scrollTarget = sessionStore.messages.last?.id
         } label: {
             Image(systemName: "chevron.down")
                 .font(.body.bold())
