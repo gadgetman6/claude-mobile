@@ -10,9 +10,15 @@ import Textual
 struct MessageThreadView: View {
     @Environment(SessionStore.self) private var sessionStore
 
-    /// When false, user has scrolled up — don't auto-scroll on new messages.
     @State private var autoScroll = true
     @State private var scrollTarget: String?
+    /// Index of the topmost visible message (for "N earlier" pill).
+    @State private var topVisibleIndex: Int?
+
+    private var messagesAboveCount: Int {
+        guard let idx = topVisibleIndex else { return 0 }
+        return max(0, idx)
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -22,10 +28,33 @@ struct MessageThreadView: View {
                         .rotationEffect(.degrees(180))
                         .scaleEffect(x: -1, y: 1, anchor: .center)
                 } else {
-                    ForEach(sessionStore.messages.reversed()) { message in
-                        MessageCell(message: message)
-                            .rotationEffect(.degrees(180))
-                            .scaleEffect(x: -1, y: 1, anchor: .center)
+                    ForEach(Array(sessionStore.messages.reversed().enumerated()), id: \.element.id) { reversedIdx, message in
+                        let actualIndex = sessionStore.messages.count - 1 - reversedIdx
+                        let prevMessage: DisplayMessage? = actualIndex > 0 ? sessionStore.messages[actualIndex - 1] : nil
+                        let showTimestamp = shouldShowTimestamp(for: message, previous: prevMessage)
+
+                        VStack(spacing: 4) {
+                            MessageCell(message: message)
+
+                            if showTimestamp {
+                                Text(formatTimestamp(message.timestamp))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.vertical, 6)
+                            }
+                        }
+                        .rotationEffect(.degrees(180))
+                        .scaleEffect(x: -1, y: 1, anchor: .center)
+                        .onAppear {
+                            if topVisibleIndex == nil || actualIndex < topVisibleIndex! {
+                                topVisibleIndex = actualIndex
+                            }
+                        }
+                        .onDisappear {
+                            if topVisibleIndex == actualIndex {
+                                topVisibleIndex = nil
+                            }
+                        }
                     }
                 }
             }
@@ -63,9 +92,47 @@ struct MessageThreadView: View {
         .overlay(alignment: .bottom) {
             scrollToBottomButton
         }
+        .overlay(alignment: .top) {
+            earlierMessagesPill
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func shouldShowTimestamp(for message: DisplayMessage, previous: DisplayMessage?) -> Bool {
+        guard let prev = previous else { return true }
+        return message.timestamp.timeIntervalSince(prev.timestamp) > 300 // 5 min gap
+    }
+
+    private func formatTimestamp(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        } else if cal.isDateInYesterday(date) {
+            return "Yesterday " + date.formatted(date: .omitted, time: .shortened)
+        } else {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
     }
 
     // MARK: - Subviews
+
+    private var earlierMessagesPill: some View {
+        Group {
+            if !autoScroll && messagesAboveCount > 0 {
+                Text("\(messagesAboveCount) earlier")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+                    .padding(.top, 6)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: autoScroll)
+    }
 
     private var scrollToBottomButton: some View {
         Button {

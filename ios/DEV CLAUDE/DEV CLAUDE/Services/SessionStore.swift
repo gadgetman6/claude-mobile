@@ -611,6 +611,7 @@ struct DisplayMessage: Identifiable {
     var role: MessageRole
     var content: [ContentPart]
     var status: MessageStatus?
+    var timestamp: Date = Date()
 
     enum MessageRole: String {
         case user, assistant, system
