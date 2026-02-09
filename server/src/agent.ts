@@ -183,6 +183,7 @@ export class AgentSession {
         const extra = msg.type === "stream_event" ? (msg as any).event?.type : ("subtype" in msg ? (msg as any).subtype : "");
         const parentId = (msg as any).parent_tool_use_id;
         console.log("[agent] Got message:", msg.type, extra, parentId ? `(parent: ${parentId})` : "");
+        if (msg.type === "system") console.log("[agent] System detail:", JSON.stringify(msg).slice(0, 500));
 
         // Extract session ID from init message
         if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {

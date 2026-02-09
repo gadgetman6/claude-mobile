@@ -283,6 +283,7 @@ final class SessionStore {
 
         case .result(let payload):
             isStreaming = false
+            isCompacting = false
             var parts: [String] = []
             if let duration = payload.durationMs { parts.append(String(format: "Duration: %.1fs", Double(duration) / 1000)) }
             if let turns = payload.numTurns { parts.append("Turns: \(turns)") }
@@ -298,6 +299,7 @@ final class SessionStore {
     private func handleSystemMessage(_ payload: SDKSystemPayload) {
         switch payload.subtype {
         case "init":
+            isCompacting = false
             currentModel = payload.model ?? currentModel
             permissionMode = payload.permissionMode ?? permissionMode
             if let sid = payload.sessionId { sessionId = sid }
