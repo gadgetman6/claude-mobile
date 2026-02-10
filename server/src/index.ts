@@ -643,17 +643,24 @@ io.on("connection", (socket) => {
         isStreaming: currentSession?.isStreaming ?? false,
         maxThinkingTokens: currentSession?.maxThinkingTokens ?? null,
       } satisfies ServerMessage);
-      // Load full session history from transcript file
+      // Load full session history from transcript file (provider-specific)
       try {
-        const homeDir = process.env.HOME ?? "/home/debian";
-        const projectKey = currentCwd.replace(/\//g, "-");
-        const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
-        const transcript = await parseTranscript(filePath);
-        const history = transcriptToHistory(transcript);
+        let history: HistoryEntry[] = [];
+        if (currentProvider === "codex") {
+          history = await loadCodexHistory(currentSessionId);
+        } else {
+          const homeDir = process.env.HOME ?? "/home/debian";
+          const projectKey = currentCwd.replace(/\//g, "-");
+          const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
+          const transcript = await parseTranscript(filePath);
+          history = transcriptToHistory(transcript);
+        }
         if (history.length > 0) {
           socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
         }
-      } catch {}
+      } catch (err) {
+        console.error("[socket.io] Failed to load session history on reconnect:", err);
+      }
       if (currentSession) {
         socket.emit("message", {
           type: "token_usage",
@@ -663,11 +670,16 @@ io.on("connection", (socket) => {
     } else {
       if (currentCwd && currentSessionId) {
         try {
-          const homeDir = process.env.HOME ?? "/home/debian";
-          const projectKey = currentCwd.replace(/\//g, "-");
-          const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
-          const transcript = await parseTranscript(filePath);
-          const history = transcriptToHistory(transcript);
+          let history: HistoryEntry[] = [];
+          if (currentProvider === "codex") {
+            history = await loadCodexHistory(currentSessionId);
+          } else {
+            const homeDir = process.env.HOME ?? "/home/debian";
+            const projectKey = currentCwd.replace(/\//g, "-");
+            const filePath = `${homeDir}/.claude/projects/${projectKey}/${currentSessionId}.jsonl`;
+            const transcript = await parseTranscript(filePath);
+            history = transcriptToHistory(transcript);
+          }
           if (history.length > 0) {
             socket.emit("message", { type: "session_history", messages: history } satisfies ServerMessage);
           }
